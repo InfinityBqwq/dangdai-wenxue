@@ -282,10 +282,13 @@ if (fs.existsSync(notesDir)) {
   }
 }
 
-/* ---------------- 4b. 镇卷页面：时间轴综述 + 逐年大事记 ---------------- */
+/* ---------------- 4b. 镇卷页面：时间轴综述 + 逐年大事记 + 笔记目录 ----------------
+   这三页是「综述」性质,不参与分期挂载,在 wiki 分期导航顶部单列。 */
+const overviewNames = new Set();
 const specialPages = [
   { file: path.join(VAULT, '中国当代文学史时间轴.md'), name: '中国当代文学史时间轴' },
   { file: path.join(VAULT, '原文', '中国现代文学史1915-2018', '中国当代文学大事记（1949—2018）.md'), name: '中国当代文学大事记（1949—2018）' },
+  { file: path.join(VAULT, 'notes', '现代文学史笔记目录.md'), name: '现代文学史笔记目录' },
 ];
 for (const sp of specialPages) {
   const raw = readMd(sp.file);
@@ -298,7 +301,117 @@ for (const sp of specialPages) {
     body, path: sp.file.slice(VAULT.length + 1),
   };
   notes.push(page);
+  overviewNames.add(sp.name);
   byName.set(sp.name, page); addAlias(sp.name);
+}
+
+/* ---------------- 4c. 两套教材分期(wiki 分期导航骨架) ----------------
+   分期划分以《原文》两目录的章文件名为准,口径定义只有 js/config.js 的
+   APP_CONFIG.periodizations 一份(此处求值引入,避免双处维护)。
+   每篇分期笔记按文件名年代段的中点年挂到两套口径各自的期;
+   洪版只覆盖 1949—2000,新世纪笔记仅入朱版(忠实教材覆盖范围)。 */
+const periodizations = { overview: [] };
+{
+  // js/config.js 是纯对象赋值脚本,直接求值取 APP_CONFIG
+  const win = {};
+  new Function('window', readMd(path.join(HERE, '..', 'js', 'config.js')))(win);
+  const PERIZ = win.APP_CONFIG.periodizations;
+
+  // 章号:朱「第十六章」中文数字 / 洪「27_」数字前缀
+  const CN_DIGIT = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+  const cnNum = s => {
+    if (s === '十') return 10;
+    const m = /^([一二三四五六七八九]?)十([一二三四五六七八九])?$/.exec(s);
+    return m ? (m[1] ? CN_DIGIT[m[1]] : 1) * 10 + (m[2] ? CN_DIGIT[m[2]] : 0) : (CN_DIGIT[s] || 0);
+  };
+
+  // 扫描章文件(与 5c 节同一过滤:朱排除大事记/目录/整册拆分件,洪排除前言/海报)
+  const chaptersByBook = {};
+  for (const key of Object.keys(PERIZ)) {
+    const pz = PERIZ[key];
+    const list = [];
+    for (const f of fs.readdirSync(path.join(VAULT, pz.dir))) {
+      if (!f.endsWith('.md')) continue;
+      if (key === 'zhu' && !/^第.+章 /.test(f)) continue;
+      if (key === 'hong' && !/^\d{2}_第.+章_/.test(f)) continue;
+      let num = 0, title = '';
+      const mz = /^第(.+?)章 (.+)\.md$/.exec(f);
+      const mh = /^(\d{2})_第(.+?)章_(.+)\.md$/.exec(f);
+      if (key === 'zhu' && mz) { num = cnNum(mz[1]); title = `第${mz[1]}章 ${mz[2]}`; }
+      else if (key === 'hong' && mh) { num = +mh[1]; title = `第${mh[2]}章 ${mh[3].replace(/_/g, ' ')}`; }
+      if (!num) continue;
+      list.push({ num, title, file: f, path: `${pz.dir}/${f}` });
+    }
+    list.sort((a, b) => a.num - b.num);
+    chaptersByBook[key] = list;
+  }
+
+  // 各期骨架(chapters 按章号区间填充;hidden 期照常携带数据,由前端决定不渲染)
+  for (const key of Object.keys(PERIZ)) {
+    const pz = PERIZ[key];
+    periodizations[key] = {
+      id: pz.id || key, label: pz.label, book: pz.book,
+      hideBefore: pz.hideBefore || 0,
+      periods: pz.periods.map(p => ({
+        id: p.id, name: p.name, from: p.from, to: p.to, hidden: !!p.hidden,
+        chapters: p.chapters
+          ? chaptersByBook[key].filter(c => c.num >= p.chapters[0] && c.num <= p.chapters[1])
+          : [],
+        notes: [],
+      })),
+    };
+  }
+
+  // 笔记文件名年代段:覆盖连写年代(50-70年代 / 1950-60年代 / 80-90年代)、
+  // 4 位年份段(1949—1976 / 2000-2018)、单年代(1920年代 / 1990年代 / 80年代)
+  function noteSpan(name) {
+    const cent = y => (y >= 50 && y <= 99 ? 1900 : 2000) + y;   // 两位年代 → 全年
+    const full = y => (y >= 100 ? y : cent(y));
+    let m = /((?:19|20)?\d{2})\s*[—–\-～~至]\s*(\d{2})\s*年代/.exec(name);
+    if (m) return { from: full(+m[1]), to: cent(+m[2]) + 10 };
+    m = /((?:19|20)\d{2})\s*[—–\-～~至]\s*((?:19|20)\d{2})?/.exec(name);
+    if (m) return { from: +m[1], to: m[2] ? +m[2] : +m[1] + 10 };
+    m = /((?:19|20)\d{2})\s*年代/.exec(name);
+    if (m) return { from: +m[1], to: +m[1] + 10 };
+    m = /(\d{2})\s*年代/.exec(name);
+    if (m) return { from: cent(+m[1]), to: cent(+m[1]) + 10 };
+    return null;
+  }
+  // 无纪年标题的少数笔记兜底(题意归段)
+  const SPAN_FALLBACK = {
+    '中国文学现代化': { from: 1915, to: 1949 },
+    '五四革命文学的兴起与发展': { from: 1917, to: 1927 },
+  };
+
+  // 《现代文学史笔记目录.md》的编目顺序 = 分期笔记展示顺序;未编目者排末尾
+  const tocOrder = [];
+  const tocRe = /\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/g;
+  let tom;
+  while ((tom = tocRe.exec(readMd(path.join(VAULT, 'notes', '现代文学史笔记目录.md'))))) {
+    const nm = tom[1].trim();
+    if (!tocOrder.includes(nm)) tocOrder.push(nm);
+  }
+  const tocIdx = nm => { const i = tocOrder.indexOf(nm); return i < 0 ? 1e4 : i; };
+
+  // 挂载:年代段中点年落入哪个期就归哪期(综述页不挂载)
+  const unspanned = [];
+  for (const n of notes) {
+    if (overviewNames.has(n.name)) { periodizations.overview.push(n.name); continue; }
+    const span = noteSpan(n.name) || SPAN_FALLBACK[n.name];
+    if (!span) { unspanned.push(n.name); continue; }
+    if (!n.from) { n.from = span.from; n.to = span.to; }   // 回填基础解析漏掉的年代
+    const mid = (span.from + span.to) / 2;
+    for (const key of Object.keys(PERIZ)) {
+      const p = periodizations[key].periods.find(p => mid >= p.from && mid < p.to);
+      if (p) p.notes.push(n.name);
+    }
+  }
+  for (const key of Object.keys(PERIZ))
+    for (const p of periodizations[key].periods)
+      p.notes.sort((a, b) => tocIdx(a) - tocIdx(b));
+  // 解析失败者归入综述组兜底,保证不丢内容
+  periodizations.overview.push(...unspanned);
+  globalThis.__perizReport = { unspanned: unspanned.length };
 }
 
 /* ---------------- 5. 策展层合并 ---------------- */
@@ -547,6 +660,7 @@ for (const e of entities) {
 const DATA = {
   generated: new Date().toISOString().slice(0, 16).replace('T', ' '),
   periods: PERIODS,
+  periodizations,                 // 两套教材分期(wiki 分期导航)
   books: {
     hong: { ...BOOKS.hong, chronicle: hongChronicle.length, chapters: globalThis.__bookChapters.hong },
     zhu:  { ...BOOKS.zhu,  chronicle: chronicle.length, chapters: globalThis.__bookChapters.zhu },
@@ -595,5 +709,12 @@ const hongMs = hongChronicle.filter(c => c.milestone);
 const hongPaired = hongMs.filter(c => usedMilestone.has(c.msTitle)).length;
 console.log(`洪侧里程碑命中: ${hongMs.length}（其中与朱侧同题配对 ${hongPaired} 个;策展独立卡 ${milestones.length - usedMilestone.size} 张）`);
 console.log(`未命中里程碑: ${milestones.filter(m => !usedMilestone.has(m.title)).map(m => m.title + '(' + m.year + ')').join('、') || '无'}`);
-console.log(`未解析链接目标(前20): ${[...missingLinkTargets].slice(0, 20).join('、')}`);
+for (const key of ['zhu', 'hong']) {
+  const pz = DATA.periodizations[key];
+  console.log(`分期导航[${pz.label}]: ` + pz.periods.map(p =>
+    `${p.name}(${p.chapters.length}章${p.hidden ? ',暂隐' : ',' + p.notes.length + '篇笔记'})`).join(' | '));
+}
+if (globalThis.__perizReport.unspanned)
+  console.log(`分期导航: ${globalThis.__perizReport.unspanned} 篇笔记未解析出年代段,已归入综述组`);
+console.log(`未解析链接目标(前20): ${[...missingLinkTargets].slice(0, 20).join('、') || '无'}`);
 console.log(`输出体积: ${(fs.statSync(OUT_FILE).size / 1024 / 1024).toFixed(2)} MB`);

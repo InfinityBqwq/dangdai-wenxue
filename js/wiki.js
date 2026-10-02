@@ -1,13 +1,16 @@
 /* ============================================================
    wiki.js — WIKI 视图：左侧分类树 + 右侧卡片阅读
+   树顶部为分期导航:综述 + 朱/洪两套教材分期(骨架来自《原文》章文件名,
+   由 build-data.mjs 生成于 D.periodizations)。章节行跳 Obsidian 原文,
+   笔记行开阅读抽屉;hidden 期只显示暂隐提示行。其后按实体类型分组。
+   词条卡恒全量(不按编年口径拆分),分期导航恒显两套口径,不随顶栏切换。
    ============================================================ */
 (function () {
   'use strict';
   const CFG = window.APP_CONFIG;
   const D = window.DATA;
 
-  const GROUPS = [
-    { key: 'note', label: '分期笔记 · 综述', color: '#8a8272' },
+  const GROUPS = [   // 分期笔记不再平铺成组,由分期导航承载
     { key: 'event', label: '事件 · 运动 · 论争', color: CFG.types.event.color },
     { key: 'policy', label: '文艺政策', color: CFG.types.policy.color },
     { key: 'movement', label: '思潮 · 群体 · 流派', color: CFG.types.movement.color },
@@ -17,10 +20,8 @@
     { key: 'org', label: '组织 · 机构', color: CFG.types.org.color },
   ];
 
-  /* 词条卡恒全量(不按编年口径拆分);分期笔记/综述亦恒显示 */
   function collect() {
     const map = new Map(GROUPS.map(g => [g.key, []]));
-    D.notes.forEach(n => map.get('note').push(n));
     D.entities.forEach(e => { if (map.get(e.type)) map.get(e.type).push(e); });
     GROUPS.forEach(g => map.get(g.key).sort((a, b) => a.name.localeCompare(b.name, 'zh')));
     return map;
@@ -28,30 +29,86 @@
 
   let byName = new Map();
   let currentName = '';
+
+  const escAttr = s => String(s).replace(/"/g, '&quot;');
+  const obsidianUri = p => `obsidian://open?vault=${CFG.obsidianVault}&file=${encodeURIComponent(String(p).replace(/\.md$/, ''))}`;
+  const noteBtn = n => `<button class="wt-item" data-name="${escAttr(n)}">${n}</button>`;
+  const gheadHtml = (color, label, count, title) =>
+    `<span title="${escAttr(title || label)}"><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:7px;opacity:.8"></span>${label}</span>
+     <span><span class="count">${count}</span> <span class="arrow">▶</span></span>`;
+
+  /* 折叠组:与 .wt-group 同构(ghead + grid-rows 过渡) */
+  function collapsible(parent, headHtml, cls = '') {
+    const wrap = document.createElement('div');
+    wrap.className = `wt-group ${cls}`.trim();
+    wrap.innerHTML = `<div class="wt-ghead">${headHtml}</div>
+      <div class="wt-items"><div class="wt-inner"></div></div>`;
+    wrap.querySelector('.wt-ghead').addEventListener('click', () => wrap.classList.toggle('open'));
+    parent.appendChild(wrap);
+    return wrap.querySelector('.wt-inner');
+  }
+
+  /* 分期导航:综述 + 两套教材分期(口径色沿用顶栏 --src-zhu / --src-hong) */
+  function buildPeriodNav(tree) {
+    const PZ = D.periodizations;
+    if (!PZ) return;
+    if (PZ.overview && PZ.overview.length) {
+      const inner = collapsible(tree, gheadHtml('#8a8272', '综述 · 长卷 · 目录', PZ.overview.length));
+      inner.innerHTML = PZ.overview.map(noteBtn).join('');
+    }
+    const colorOf = { zhu: 'var(--src-zhu)', hong: 'var(--src-hong)' };
+    for (const key of ['zhu', 'hong']) {
+      const pz = PZ[key];
+      if (!pz) continue;
+      const vis = pz.periods.filter(p => !p.hidden);
+      const chapN = vis.reduce((a, p) => a + p.chapters.length, 0);
+      const noteN = vis.reduce((a, p) => a + p.notes.length, 0);
+      const inner = collapsible(tree,
+        gheadHtml(colorOf[key], pz.label, `${chapN}章 · ${noteN}笔记`, `${pz.label} · ${pz.book}`), 'wt-scheme');
+      for (const p of pz.periods) {
+        if (p.hidden) {
+          const muted = document.createElement('div');
+          muted.className = 'wt-muted';
+          muted.textContent = `${p.name} · 暂隐 ${p.notes.length} 篇`;
+          inner.appendChild(muted);
+          continue;
+        }
+        const per = document.createElement('div');
+        per.className = 'wt-period';
+        per.innerHTML = `
+          <div class="wt-phead"><span>${p.name}</span>
+            <span><span class="count">${p.chapters.length}章 · ${p.notes.length}篇</span> <span class="arrow">▶</span></span></div>
+          <div class="wt-items"><div class="wt-inner">
+            ${p.chapters.map(c => `<button class="wt-chap" data-path="${escAttr(c.path)}" title="在 Obsidian 中打开原文">${c.title}</button>`).join('')}
+            ${p.notes.map(noteBtn).join('')}
+          </div></div>`;
+        per.querySelector('.wt-phead').addEventListener('click', () => per.classList.toggle('open'));
+        per.querySelectorAll('.wt-chap').forEach(b =>
+          b.addEventListener('click', () => window.open(obsidianUri(b.dataset.path), '_blank')));
+        per.querySelectorAll('.wt-item').forEach(b =>
+          b.addEventListener('click', () => show(b.dataset.name)));
+        inner.appendChild(per);
+      }
+    }
+  }
+
   function buildTree() {
-    const data = collect();
     byName = new Map();
-    for (const arr of data.values()) arr.forEach(item => byName.set(item.name, item));
+    D.notes.forEach(n => byName.set(n.name, n));
+    D.entities.forEach(e => byName.set(e.name, e));
     const tree = document.getElementById('wiki-tree');
     tree.innerHTML = '';
+    buildPeriodNav(tree);
+    const data = collect();
     for (const g of GROUPS) {
       const items = data.get(g.key);
       if (!items.length) continue;
-      const wrap = document.createElement('div');
-      wrap.className = 'wt-group';
-      wrap.innerHTML = `
-        <div class="wt-ghead">
-          <span><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${g.color};margin-right:7px;opacity:.8"></span>${g.label}</span>
-          <span><span class="count">${items.length}</span> <span class="arrow">▶</span></span>
-        </div>
-        <div class="wt-items"><div class="wt-inner">${items.map(it =>
-          `<button class="wt-item" data-name="${it.name.replace(/"/g, '&quot;')}">${it.name}</button>`).join('')}</div></div>`;
-      wrap.querySelector('.wt-ghead').addEventListener('click', () => wrap.classList.toggle('open'));
-      wrap.querySelectorAll('.wt-item').forEach(btn =>
+      const inner = collapsible(tree, gheadHtml(g.color, g.label, items.length));
+      inner.innerHTML = items.map(it => noteBtn(it.name)).join('');
+      inner.querySelectorAll('.wt-item').forEach(btn =>
         btn.addEventListener('click', () => show(btn.dataset.name)));
-      tree.appendChild(wrap);
     }
-    // 默认展开前两组
+    // 默认展开:综述 + 朱版
     tree.querySelectorAll('.wt-group').forEach((g, i) => { if (i < 2) g.classList.add('open'); });
   }
 
@@ -114,7 +171,7 @@
       buildTree();
       const box = document.getElementById('wiki-content');
       box.innerHTML = `<h1 style="border:none;font-size:22px;color:var(--ink-3)">选择左侧任意卡片开始阅读</h1>
-        <p style="color:var(--ink-3)">全库共 ${D.entities.length} 张知识卡片 + ${D.notes.length} 篇分期笔记与综述。<br>
+        <p style="color:var(--ink-3)">全库共 ${D.entities.length} 张知识卡片 + ${D.notes.length} 篇分期笔记与综述,按朱栋霖 / 洪子诚两套教材分期编目(分期骨架取自《原文》章名,章节可跳 Obsidian)。<br>
         卡片正文中并排两书说法;编年口径由顶栏切换。</p>`;
     },
     onShow(params) {

@@ -38,6 +38,36 @@ window.APP_CONFIG = {
     },
   },
 
+  /* ---------- 两套教材分期(wiki 分期导航骨架) ----------
+     分期划分以《原文》两目录的章文件名为准;口径定义只有这一份,
+     管线(build-data.mjs)求值本文件后按 chapters:[起,止] 章号区间
+     填充实际章节与笔记,前端 wiki 只消费生成结果。
+     朱版按「年代段+文体」三段;洪版按专题章组分四段、不覆盖 2000 后。
+     hideBefore:暂隐该年之前的朱版内容(临时措施,改掉此值重跑管线即恢复)。 */
+  periodizations: {
+    zhu: {
+      id: 'zhu', label: '朱栋霖版', book: '《中国现代文学史1915—2018》下编',
+      dir: '原文/中国现代文学史1915-2018',
+      hideBefore: 1949,
+      periods: [
+        { id: 'zp0', name: '1915—1949 现代文学', from: 1915, to: 1949, hidden: true }, // 原文暂缺上编,仅笔记
+        { id: 'zp1', name: '1949—1976 年文学', from: 1949, to: 1976, chapters: [1, 5] },
+        { id: 'zp2', name: '80年代、90年代文学', from: 1976, to: 2000, chapters: [6, 13] },
+        { id: 'zp3', name: '2000—2018 年文学', from: 2000, to: 2018, chapters: [14, 16] },
+      ],
+    },
+    hong: {
+      id: 'hong', label: '洪子诚版', book: '《中国当代文学史》',
+      dir: '原文/中国当代文学史-洪子诚',
+      periods: [
+        { id: 'hp1', name: '文学的转折与一体化', from: 1949, to: 1966, chapters: [1, 12] },
+        { id: 'hp2', name: '1966—1976 年段', from: 1966, to: 1976, chapters: [13, 15] },
+        { id: 'hp3', name: '新时期文学', from: 1976, to: 1990, chapters: [16, 24] },
+        { id: 'hp4', name: '90年代文学', from: 1990, to: 2000, chapters: [25, 27] },
+      ],
+    },
+  },
+
   /* ---------- 实体类型 ---------- */
   /* kind: timeline 上人物生涯条等使用的归类 */
   types: {
