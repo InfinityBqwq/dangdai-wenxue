@@ -923,10 +923,13 @@
       buildFilters();
       // 拖动窗口边框时 resize 连发几十次，防抖后再做全量重建（单次约 70ms）
       let resizeTimer = null;
-      window.addEventListener('resize', () => {
+      const scheduleResize = () => {
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(onResize, 150);
-      });
+      };
+      window.addEventListener('resize', scheduleResize);
+      // 嵌入式 webview 调整窗格可能不触发 window resize,用 ResizeObserver 盯 svg 盒
+      if (window.ResizeObserver) new ResizeObserver(scheduleResize).observe(svg);
       maybePlayIntro();    // 首次显影仪式（与卷轴开幕对齐，仅此一次）
     },
     onShow(params) {

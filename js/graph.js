@@ -452,6 +452,10 @@
     ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
     requestDraw();
   }
+  /* 位图与 CSS 盒同步:嵌入式 webview 调整窗格大小时可能不触发 window resize,
+     位图被 CSS 拉缩后悬停命中区与绘制区错位(曾致"光标下移一段才聚焦")。
+     ResizeObserver 直接盯画布盒尺寸,变化即重设位图。 */
+  if (window.ResizeObserver) new ResizeObserver(() => onResize()).observe(canvas);
 
   let inited = false;
   window.Views.graph = {
@@ -470,6 +474,9 @@
       window.addEventListener('resize', onResize);
     },
     onShow(params) {
+      // 兜底:视图切回时若盒尺寸又变了(无 ResizeObserver 的环境)先重同步
+      const r = canvas.getBoundingClientRect();
+      if (Math.abs(r.width - W) > 1 || Math.abs(r.height - H) > 1) onResize();
       requestDraw();
       if (params && params.node) setTimeout(() => focusNode(params.node), 80);
     },
