@@ -168,9 +168,37 @@
     return `<span class="badge${solid ? ' solid' : ''}" style="color:${solid ? color : 'var(--ink-2)'};${solid ? '' : `border-color:${color}55`}">${esc(text)}</span>`;
   }
 
+  /* 词条 → 时间轴锚点(年):人物=印章所在期(birth+28) · 笔记=起始年 ·
+     作品=workYear · 事件/思潮/运动等=编年中提及该词条的条目(优先里程碑,取最早)。
+     供 Wiki 页底与词条抽屉的「时间轴定位」按钮使用。 */
+  function timelineAnchor(e) {
+    if (!e) return null;
+    if (e.type === 'note' || e.note) return e.from ? +e.from : null;
+    if (e.type === 'person') {
+      if (!e.birth) return null;
+      return Math.min(Math.max(+e.birth + 28, CFG.YEAR_MIN), CFG.YEAR_MAX);
+    }
+    if (e.workYear) return +e.workYear;
+    const name = e.name;
+    // 编年提及:双链 refs/同题优先;事件·思潮·运动类再放宽到正文含名
+    // (年表条目不总是 [[链接]] 该词条,如寻根文学只出现在 1985 条目正文里)
+    const chronType = ['event', 'policy', 'movement', 'org', 'theory'].includes(e.type);
+    const evs = D.events.filter(ev =>
+      (ev.title && resolveName(ev.title) === name) ||
+      (ev.refs || []).some(r => resolveName(r) === name) ||
+      (chronType && ev.text.includes(name)));
+    if (!evs.length) return null;
+    const sorted = evs.slice().sort((a, b) => a.year - b.year || (a.month || 0) - (b.month || 0));
+    const best = sorted.find(ev => ev.priority === 1) || sorted[0];
+    return best.year + ((best.month || 6) - 0.5) / 12;
+  }
+
   function crossActions(name, kind) {
+    const e = entityByName.get(name) || noteByName.get(name);
+    const anchor = e ? timelineAnchor(e) : null;
     const obsidianUri = `obsidian://open?vault=${CFG.obsidianVault}&file=${encodeURIComponent(name)}`;
     return `
+      ${anchor ? `<button data-act="timeline-year" data-year="${Math.round(anchor)}">⇲ 时间轴定位</button>` : ''}
       <button data-act="wiki" data-name="${esc(name)}">📖 Wiki 阅读</button>
       <button data-act="graph" data-name="${esc(name)}">🕸 图谱查看</button>
       ${kind !== 'note' ? `<button data-act="locate" data-name="${esc(name)}">🗺 地图定位</button>` : ''}
@@ -315,10 +343,12 @@
     $('#drawer-title').textContent = ev.title || ev.label;
     const dateStr = `${ev.year} 年${ev.month ? ' ' + ev.month + ' 月' : ''}${ev.day ? ' ' + ev.day + ' 日' : ''}`;
     $('#drawer-sub').textContent = dateStr;
-    // 里程碑：以策展说明为主，避免与编年原文重复；非里程碑：显示原文
+    // 内容:里程碑=策展说明+编年原文(不再只给一句话);普通事件=编年原文
     let html = '';
     if (ev.milestone && ev.blurb) {
-      html += `<p style="color:var(--ink-1);font-weight:500">${esc(ev.blurb)}</p>`;
+      html += `<p class="ev-blurb">${esc(ev.blurb)}</p>`;
+      if (ev.text && ev.text !== ev.blurb)
+        html += `<h3>编年原文 · ${esc(EVENT_SRC[ev.src] || '')}</h3><p>${renderWiki(ev.text)}</p>`;
     } else {
       html += `<p>${renderWiki(ev.text)}</p>`;
     }
@@ -330,16 +360,13 @@
     }
     html += crossChronicle(ev);
     $('#drawer-body').innerHTML = html;
+    // 按钮精简:搜索 / 图谱;标题能解析到词条卡时直达 Wiki(联动入口)
     const evName = ev.title || ev.label;
-    // 编年事件的原文件:洪=第二十七章书后年表 · 朱=大事记附录;策展独立卡无原文件
-    const obsFile = ev.src === 'hong' ? '原文/中国当代文学史-洪子诚/27_第二十七章_90年代的小说'
-      : ev.src === 'zhu' ? '原文/中国现代文学史1915-2018/中国当代文学大事记（1949—2018）' : '';
-    const obsidianUri = `obsidian://open?vault=${CFG.obsidianVault}&file=${encodeURIComponent(obsFile)}`;
+    const wikiName = resolveName(evName);
     $('#drawer-actions').innerHTML = `
-      <button data-act="timeline-focus" data-year="${ev.year}">⇲ 时间轴定位 ${ev.year}</button>
       <button data-act="search-name" data-name="${esc(evName)}">🔍 搜索相关卡片</button>
       <button data-act="graph" data-name="${esc(evName)}">🕸 图谱查看</button>
-      ${obsFile ? `<button data-act="obsidian" data-uri="${esc(obsidianUri)}">✎ Obsidian 打开</button>` : ''}`;
+      ${wikiName ? `<button data-act="wiki" data-name="${esc(wikiName)}">📖 Wiki 阅读</button>` : ''}`;
     swapDrawer();
     drawer.classList.add('open');
   }
@@ -367,6 +394,10 @@
     const act = btn.dataset.act;
     const name = btn.dataset.name;
     if (act === 'wiki') { drawer.classList.remove('open'); switchView('wiki', { name }); }
+    else if (act === 'timeline-year') {   // 词条 → 时间轴:聚焦锚点年并自动展开中心事件
+      drawer.classList.remove('open');
+      switchView('timeline', { focus: +btn.dataset.year });
+    }
     else if (act === 'search-name') {          // 打开全局搜索并预填词条名
       drawer.classList.remove('open');
       // 延迟到本轮 click 冒泡结束后,避免被全局"点击搜索框外即关闭"处理器顶掉
@@ -378,7 +409,6 @@
     }
     else if (act === 'graph') { switchView('graph', { node: name }); }
     else if (act === 'locate') { switchView('map', { person: name }); }
-    else if (act === 'timeline-focus') { switchView('timeline', { focus: +btn.dataset.year }); }
     else if (act === 'obsidian') { window.open(btn.dataset.uri, '_blank'); }
   });
   $('#drawer .drawer-close').addEventListener('click', () => drawer.classList.remove('open'));
@@ -396,13 +426,16 @@
   // 供 wiki.js 使用
   window.renderWikiStripped = renderWiki;
   window.stripTitleHeading = stripTitleHeading;
+  /* Wiki 页底「关联入口」按钮组(样式见 .wiki-links-bar):
+     时间轴定位对全类型词条生效——事件/运动/论争锚到编年中最早提及它的条目 */
   window.crossActionsForWiki = item => {
     const obsidianUri = `obsidian://open?vault=${CFG.obsidianVault}&file=${encodeURIComponent(item.path ? item.path.replace(/\.md$/, '') : item.name)}`;
+    const anchor = timelineAnchor(item);
     return `
-      <button data-act="graph" data-name="${esc(item.name)}">🕸 图谱查看关联</button>
-      ${item.type !== 'note' ? `<button data-act="locate" data-name="${esc(item.name)}">🗺 地图定位</button>` : ''}
-      ${(item.birth || item.from) ? `<button data-act="timeline" data-name="${esc(item.name)}">⇲ 时间轴定位</button>` : ''}
-      <button data-act="obsidian" data-uri="${esc(obsidianUri)}">✎ Obsidian 打开</button>`;
+      ${anchor ? `<button class="btn" data-act="timeline" data-year="${Math.round(anchor)}">⇲ 时间轴定位</button>` : ''}
+      <button class="btn" data-act="graph" data-name="${esc(item.name)}">🕸 图谱查看关联</button>
+      ${item.type !== 'note' ? `<button class="btn" data-act="locate" data-name="${esc(item.name)}">🗺 地图定位</button>` : ''}
+      <button class="btn" data-act="obsidian" data-uri="${esc(obsidianUri)}">✎ Obsidian 打开</button>`;
   };
 
   /* ---------------- 路由 ---------------- */
@@ -428,10 +461,11 @@
     ).toString();
     const newHash = '#/' + view + (q ? '?' + q : '');
     if (location.hash !== newHash) history.replaceState(null, '', newHash);
-    // 通知视图
+    // 通知视图(先 init 再 onShow:onShow 可能依赖 init 建立的状态,
+    // 如时间轴 focusYear 需要 layout() 已算出的分区)
     const mod = window.Views[view];
+    if (mod && !mod._inited) { mod.init(); mod._inited = true; }
     if (mod && mod.onShow) mod.onShow(params);
-    if (mod && !mod._inited) { mod.init(); mod._inited = true; if (mod.onShow) mod.onShow(params); }
   };
   window.switchView = switchView;
   window.getView = () => currentView;

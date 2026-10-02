@@ -439,6 +439,20 @@ a:hover { color: var(--cinnabar-deep); }
   border-radius: 10px; padding: 1px 9px;
 }
 
+/* Wiki 页底「关联入口」条(替代旧默认按钮样式) */
+.wiki-links-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  margin-top: 36px; padding-top: 14px;
+  border-top: 1px dashed var(--paper-edge);
+}
+.wiki-links-bar .wlb-label {
+  font-size: 11px; color: var(--ink-3); letter-spacing: 2px; margin-right: 2px;
+}
+.wiki-links-bar .btn { padding: 5px 12px; font-size: 12px; }
+
+/* 编年事件抽屉:策展说明段 */
+.ev-blurb { color: var(--ink-1); font-weight: 500; }
+
 /* ============ WIKI 视图 ============ */
 #view-wiki { display: none; }
 #view-wiki.active { display: flex; }

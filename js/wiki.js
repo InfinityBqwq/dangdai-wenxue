@@ -86,17 +86,17 @@
       ${sub.length ? `<p style="color:var(--ink-3);font-size:13px;margin-top:10px">${sub.join(' · ')}</p>` : ''}
       <div style="margin-top:18px" class="wiki-article">${window.renderWikiStripped(window.stripTitleHeading(item.body || '（占位卡片：知识库中尚无正文。可从图谱/时间轴查看其关联。）', item.name))}</div>
       ${window.compareBlockHtml ? window.compareBlockHtml(item) : ''}
-      <hr style="margin-top:36px">
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px" id="wiki-actions">
+      <div class="wiki-links-bar" id="wiki-actions">
+        <span class="wlb-label">关联入口</span>
         ${window.crossActionsForWiki ? window.crossActionsForWiki(item) : ''}
       </div>`;
     box.querySelector('#wiki-actions')?.addEventListener('click', e => {
       const btn = e.target.closest('button');
       if (!btn) return;
       const act = btn.dataset.act;
-      if (act === 'graph') window.switchView('graph', { node: item.name });
+      if (act === 'timeline') window.switchView('timeline', { focus: +btn.dataset.year });
+      else if (act === 'graph') window.switchView('graph', { node: item.name });
       else if (act === 'locate') window.switchView('map', { person: item.name });
-      else if (act === 'timeline') window.switchView('timeline', { focus: item.birth || item.from || '' });
       else if (act === 'obsidian') window.open(btn.dataset.uri, '_blank');
     });
     // 正文换装淡入
