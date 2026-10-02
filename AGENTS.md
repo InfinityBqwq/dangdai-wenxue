@@ -14,6 +14,7 @@
 
 - `js/data.js` 由管线生成，**勿手改**。数据修正去两处：Vault 原始卡片，或 `tools/curated.json`（人工策展层：里程碑 / 人物印章名单 / 流派带 / 生卒 / 地图钉），改完重跑管线生效。
 - 设计令牌双处同步：`css/theme.css`（CSS 变量，含暗色主题占位）与 `js/config.js`（分期 / 类型色 / 缩放阈值 / 编年口径）。组件样式只引用变量，改肤只动这两处。
+- wiki 分期导航：两套教材分期口径**唯一定义**在 `js/config.js` 的 `periodizations`（含朱版 1949 前暂隐开关 `hideBefore`），`build-data.mjs` 求值该文件并按《原文》两目录的章文件名填充章节 / 笔记——勿在管线里复制第二份口径。
 - 无模块系统：全部 `<script>` 按序加载（data → config → app → timeline → wiki → graph → map → keyboard）。新增脚本须同步 `index.html`；`app.js` 首次路由已推迟到 window load，别提前。
 - 视图模块只暴露全局 API（`window.TL` / `MAP` / `GRAPH`），键盘事件一律经 `js/keyboard.js` 集中分发，勿在视图里自行监听。
 
