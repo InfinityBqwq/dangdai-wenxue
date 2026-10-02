@@ -560,6 +560,46 @@ a:hover { color: var(--cinnabar-deep); }
   pointer-events: none; z-index: 10;
 }
 
+/* 力度调节面板(右上角,可折叠) */
+#graph-forces {
+  position: absolute; top: 14px; right: 16px; z-index: 10;
+  width: 224px;
+  background: color-mix(in srgb, var(--paper-1) 90%, transparent);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-paper);
+  backdrop-filter: blur(6px);
+  padding: 9px 12px 10px;
+  box-shadow: 0 2px 10px var(--paper-shadow);
+}
+#graph-forces .gf-title {
+  font-size: 12px; color: var(--ink-3); letter-spacing: 2px;
+  cursor: pointer; user-select: none;
+}
+#graph-forces .gf-title:hover { color: var(--ink-1); }
+#graph-forces .gf-arrow { display: inline-block; transition: transform var(--dur-fast); }
+#graph-forces.collapsed .gf-arrow { transform: rotate(-90deg); }
+#graph-forces.collapsed .gf-body { display: none; }
+#graph-forces .gf-row {
+  display: flex; align-items: center; gap: 7px;
+  margin: 7px 0 3px; font-size: 12px; color: var(--ink-1);
+}
+#graph-forces .gf-row:hover .gf-label { color: var(--ink-0); }
+#graph-forces .gf-label { width: 64px; flex: none; }
+#graph-forces .gf-row input[type=range] { flex: 1; min-width: 0; accent-color: var(--cinnabar); height: 4px; }
+#graph-forces .gf-val { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); width: 32px; text-align: right; }
+#graph-forces .gf-reset {
+  margin-top: 8px; width: 100%;
+  border: 1px solid var(--paper-edge); background: var(--paper-2);
+  color: var(--ink-2); font-size: 11.5px; padding: 4px 0;
+  border-radius: var(--radius-paper); letter-spacing: 1px;
+  transition: all var(--dur-fast);
+}
+#graph-forces .gf-reset:hover { border-color: var(--cinnabar); color: var(--cinnabar); }
+#graph-forces .gf-hint {
+  font-size: 10.5px; color: var(--ink-3); line-height: 1.6;
+  margin-top: 7px; border-top: 1px dashed var(--paper-edge); padding-top: 6px;
+}
+
 /* ============ 地图视图 ============ */
 #view-map { overflow: hidden; }
 #map-chart { width: 100%; height: 100%; }

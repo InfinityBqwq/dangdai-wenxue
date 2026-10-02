@@ -57,14 +57,24 @@
     .velocityDecay(0.42)
     .stop();
 
+  /* ---------- 力度调节(节点排斥/连线吸引/向心聚拢) ---------- */
+  const FORCE_DEFAULTS = { charge: -42, link: 0.35, center: 1 };
+  const forces = { ...FORCE_DEFAULTS };
+  function applyForces() {
+    simulation.force('charge').strength(forces.charge);
+    simulation.force('link').strength(forces.link);
+    simulation.force('center').strength(forces.center);
+  }
+
   // 布局：rAF 每帧 tick 一次，让力导向收敛过程可见（减动效时同步算完）
+  // alpha:初始热度——整卷重排用 1,滑杆微调用 0.3(局部收敛,不整卷打散)
   let layoutRaf = null;
   function stopLayout() {
     if (layoutRaf) { cancelAnimationFrame(layoutRaf); layoutRaf = null; }
   }
-  function runLayout(iter = 260) {
+  function runLayout(iter = 260, alpha = 1) {
     stopLayout();
-    simulation.alpha(1);
+    simulation.alpha(alpha);
     if (window.prefersReducedMotion && window.prefersReducedMotion()) {
       for (let i = 0; i < iter; i++) simulation.tick();
       requestDraw();
@@ -329,6 +339,54 @@
     bar.appendChild(restart);
   }
 
+  /* ---------- 力度调节面板(右上角,可折叠) ---------- */
+  function buildForcePanel() {
+    const box = document.createElement('div');
+    box.id = 'graph-forces';
+    const rows = [
+      { k: 'charge', label: '节点排斥力', min: -140, max: -6, step: 2, fmt: v => v.toFixed(0),
+        tip: '越大越散开(团块展开)' },
+      { k: 'link',   label: '连线吸引力', min: 0.05, max: 1, step: 0.05, fmt: v => v.toFixed(2),
+        tip: '关联节点互相靠拢的力度' },
+      { k: 'center', label: '向心聚拢',   min: 0.05, max: 1.5, step: 0.05, fmt: v => v.toFixed(2),
+        tip: '整体收向画布中心的力度' },
+    ];
+    box.innerHTML = `
+      <div class="gf-title gf-toggle">力度调节 <span class="gf-arrow">▾</span></div>
+      <div class="gf-body">
+        ${rows.map(r => `
+          <label class="gf-row" title="${r.tip}">
+            <span class="gf-label">${r.label}</span>
+            <input type="range" min="${r.min}" max="${r.max}" step="${r.step}" value="${forces[r.k]}" data-f="${r.k}">
+            <span class="gf-val" data-v="${r.k}">${r.fmt(forces[r.k])}</span>
+          </label>`).join('')}
+        <button class="gf-reset">↺ 复位力度</button>
+        <div class="gf-hint">节点堵成团时,调大排斥力即可展开;调节后即时重排。</div>
+      </div>`;
+    document.getElementById('view-graph').appendChild(box);
+    box.querySelector('.gf-toggle').addEventListener('click', () => box.classList.toggle('collapsed'));
+    const syncLabels = () => box.querySelectorAll('input[type=range]').forEach(inp => {
+      const r = rows.find(x => x.k === inp.dataset.f);
+      inp.value = forces[inp.dataset.f];
+      box.querySelector(`.gf-val[data-v="${inp.dataset.f}"]`).textContent = r.fmt(forces[inp.dataset.f]);
+    });
+    box.querySelectorAll('input[type=range]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        forces[inp.dataset.f] = +inp.value;
+        box.querySelector(`.gf-val[data-v="${inp.dataset.f}"]`).textContent =
+          rows.find(x => x.k === inp.dataset.f).fmt(+inp.value);
+        applyForces();
+        runLayout(160, 0.3);       // 局部收敛:不打散整体布局
+      });
+    });
+    box.querySelector('.gf-reset').addEventListener('click', () => {
+      Object.assign(forces, FORCE_DEFAULTS);
+      applyForces(); syncLabels();
+      runLayout(220, 0.8);
+      toast('力度已复位');
+    });
+  }
+
   /* ---------- 视图飞行（聚焦/回位；滚轮/拖拽随时打断） ---------- */
   let flyRaf = null;
   function stopFly() { if (flyRaf) { cancelAnimationFrame(flyRaf); flyRaf = null; } }
@@ -402,6 +460,7 @@
       inited = true;
       onResize();
       buildToolbar();
+      buildForcePanel();
       // 初始布局：以度数排序放置，收敛更快
       nodes.forEach((n, i) => {
         const a = i * 2.39996, r = 14 * Math.sqrt(i + 1);

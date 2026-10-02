@@ -335,6 +335,30 @@
     ).join('<br>')}</p>`;
   }
 
+  /* 时间轴事件卡 → 对应的 Wiki 词条:标题精确解析 → 标题包含实体名(最长=最具体优先)
+     → 编年原文的 [[双链]]。取 0–2 个,让事件/里程碑卡也能一键进 Wiki。 */
+  function wikiCandidatesForEvent(ev) {
+    const title = String(ev.title || ev.label || '');
+    const out = [];
+    const exact = resolveName(title);
+    if (exact) out.push(exact);
+    if (!out.length) {
+      const nt = norm(title);
+      const contains = [];
+      for (const e of D.entities) {
+        const n = norm(e.name);
+        if (n.length >= 2 && nt.includes(n)) contains.push(e.name);
+      }
+      contains.sort((a, b) => norm(b).length - norm(a).length);
+      out.push(...contains.slice(0, 2));
+    }
+    if (!out.length) {
+      const fromRefs = [...new Set((ev.refs || []).map(r => resolveName(r)).filter(Boolean))];
+      out.push(...fromRefs.slice(0, 2));
+    }
+    return [...new Set(out)].slice(0, 2);
+  }
+
   function openDrawerEvent(ev) {
     const tm = typeMeta(ev.kind);
     $('#drawer-kicker').innerHTML = badge(ev.milestone ? '里程碑' : '编年事件', tm.color, true) +
@@ -360,13 +384,13 @@
     }
     html += crossChronicle(ev);
     $('#drawer-body').innerHTML = html;
-    // 按钮精简:搜索 / 图谱;标题能解析到词条卡时直达 Wiki(联动入口)
+    // 按钮精简:搜索 / 图谱;Wiki 按模糊解析出的词条直达(反右运动开始 → 反右运动)
     const evName = ev.title || ev.label;
-    const wikiName = resolveName(evName);
+    const wikiNames = wikiCandidatesForEvent(ev);
     $('#drawer-actions').innerHTML = `
+      ${wikiNames.map(n => `<button data-act="wiki" data-name="${esc(n)}">📖 Wiki · ${esc(n)}</button>`).join('')}
       <button data-act="search-name" data-name="${esc(evName)}">🔍 搜索相关卡片</button>
-      <button data-act="graph" data-name="${esc(evName)}">🕸 图谱查看</button>
-      ${wikiName ? `<button data-act="wiki" data-name="${esc(wikiName)}">📖 Wiki 阅读</button>` : ''}`;
+      <button data-act="graph" data-name="${esc(evName)}">🕸 图谱查看</button>`;
     swapDrawer();
     drawer.classList.add('open');
   }
