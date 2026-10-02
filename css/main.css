@@ -378,6 +378,7 @@ a:hover { color: var(--cinnabar-deep); }
 #drawer .drawer-sub { font-size: 12px; color: var(--ink-3); margin-top: 6px; }
 #drawer .drawer-close {
   position: absolute; top: 12px; right: 12px;
+  z-index: 1;   /* 压过 drawer-head 的 drawerSwap 动画层叠上下文(fill:both 恒久生效),否则头部内容会盖住按钮吞掉点击 */
   border: none; background: transparent;
   font-size: 20px; color: var(--ink-3);
   width: 32px; height: 32px; border-radius: 50%;

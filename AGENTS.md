@@ -40,5 +40,6 @@
 - ECharts 地图性能与钉过渡：canvas 渲染器显式声明 + setOption 前先比对可见钉集合签名（集合未变零更新）；集合变化时开动画——新钉 enter / 离场钉 leave 是 echarts 散点内建行为，但**数据项必须带稳定 id**（无 id 按索引 diff，会淡出错钉），leave 时长 200ms 为库内写死、enter 走 `animationDuration`；flyGeo 逐帧 setOption 须显式 `animation:false` 防继承合并态动画；播放用 rAF 推进浮点年。
 - `KeyboardEvent.target` 可能是 `document`（无 `.matches`），判输入焦点需 `target instanceof Element` 防护。
 - 测试时序假象：rAF 异步渲染后须等两帧再读 transform；非激活视图（display:none）下子元素尺寸全为 0×0，勿据此断言 bug。
+- 绝对定位按钮（如抽屉关闭 ✕）若与带 CSS 动画（`fill: both`，动画结束后仍恒久应用）的内容区重叠，动画形成的层叠上下文按 DOM 顺序盖住 `z-index: auto` 的按钮，按钮看得见却点不到——此类按钮须显式 `z-index`（曾致抽屉 X 被头部徽章行吞掉点击）；用 `document.elementsFromPoint(按钮中心)` 可直接验证命中栈。
 - ZCode 会话中断会杀掉后台 node 服务器，恢复时重启 `node tools/serve.mjs 8080` 并重开浏览器标签。
 - 视觉审查：截图含 文革 / 反右 等历史词时，视觉审查代理可能被内容过滤器拦截（[1301]），兜底改用人工逐页核查或小图分批送审；前置预防见「敏感词降噪」节。
