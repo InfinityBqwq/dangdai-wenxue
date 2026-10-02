@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>中国当代文学史 · 数字长卷（1949—2018）</title>
+<link rel="stylesheet" href="css/theme.css">
+<link rel="stylesheet" href="css/main.css">
+<link rel="stylesheet" href="lib/fonts/style.css">
+</head>
+<body>
+
+<!-- 卷轴开幕动画 -->
+<div id="curtain">
+  <div class="c-half l"><div class="c-mark">当代文学史</div></div>
+  <div class="c-half r"></div>
+</div>
+
+<!-- 顶栏 -->
+<header id="topbar">
+  <div class="brand">
+    <span class="title">当代文学史</span>
+    <span class="subtitle">一九四九 — 二〇一八 · 数字长卷</span>
+  </div>
+  <nav id="view-tabs">
+    <button data-view="timeline" class="active">时间轴</button>
+    <button data-view="wiki">Wiki</button>
+    <button data-view="graph">图谱</button>
+    <button data-view="map">地图</button>
+  </nav>
+  <div class="spacer"></div>
+  <button id="help-btn" title="快捷键（按 ? 呼出）">⌨ 快捷键</button>
+  <div id="global-search">
+    <span style="color:var(--ink-3)">⌕</span>
+    <input type="text" placeholder="搜索人物 / 事件 / 思潮…" id="search-input">
+    <span class="kbd">Ctrl K</span>
+  </div>
+</header>
+
+<!-- 四视图 -->
+<main id="views">
+  <section id="view-timeline" class="view active">
+    <div id="tl-filters"></div>
+    <svg id="tl-svg"></svg>
+    <div id="tl-minimap"></div>
+  </section>
+
+  <section id="view-wiki" class="view">
+    <aside id="wiki-sidebar">
+      <div class="ws-head">知识库目录</div>
+      <div id="wiki-tree"></div>
+    </aside>
+    <div id="wiki-main">
+      <div id="wiki-content">
+        <div id="wiki-empty">← 从左侧选择一篇卡片开始阅读</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-graph" class="view">
+    <canvas id="graph-canvas"></canvas>
+    <div id="graph-toolbar"></div>
+    <div id="graph-hint">拖拽移动 · 滚轮缩放 · 悬停看邻居 · 点击看详情</div>
+  </section>
+
+  <section id="view-map" class="view">
+    <div id="map-chart"></div>
+    <div id="map-legend">
+      <div class="lg-row"><span style="width:10px;height:10px;border-radius:2px;background:var(--type-person);display:inline-block"></span> 人物（朱砂印钉）</div>
+      <div class="lg-row"><span style="width:10px;height:10px;border-radius:50%;background:var(--type-movement);display:inline-block"></span> 群体 / 流派（墨钉）</div>
+      <div class="lg-row"><span style="width:10px;height:10px;background:var(--type-work);display:inline-block;transform:rotate(45deg)"></span> 刊物 / 机构</div>
+    </div>
+    <div id="map-slider-wrap">
+      <div class="ms-years"><span>1949</span><span>2018</span></div>
+      <div id="map-year-display"><span class="yr">1949</span> 年</div>
+      <input type="range" id="map-slider" min="1949" max="2018" value="1949" step="1">
+      <button id="map-play" title="播放">▶</button>
+    </div>
+  </section>
+</main>
+
+<!-- 详情抽屉 -->
+<aside id="drawer">
+  <button class="drawer-close" title="关闭">✕</button>
+  <div class="drawer-head">
+    <div class="drawer-kicker" id="drawer-kicker"></div>
+    <div class="drawer-title" id="drawer-title"></div>
+    <div class="drawer-sub" id="drawer-sub"></div>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+  <div class="drawer-actions" id="drawer-actions"></div>
+</aside>
+
+<!-- 全局搜索结果 -->
+<div id="search-pop"></div>
+<div id="toast"></div>
+
+<script src="lib/d3.min.js"></script>
+<script src="lib/echarts.min.js"></script>
+<script src="lib/marked.min.js"></script>
+<script src="js/data.js"></script>
+<script src="js/config.js"></script>
+<script src="js/app.js"></script>
+<script src="js/timeline.js"></script>
+<script src="js/wiki.js"></script>
+<script src="lib/china-geojson.js"></script>
+<script src="js/graph.js"></script>
+<script src="js/map.js"></script>
+<script src="js/keyboard.js"></script>
+<script>
+// 卷轴开幕
+window.addEventListener('load', () => {
+  setTimeout(() => document.getElementById('curtain').classList.add('gone'), 900);
+  setTimeout(() => document.getElementById('curtain').remove(), 2800);
+});
+</script>
+</body>
+</html>
