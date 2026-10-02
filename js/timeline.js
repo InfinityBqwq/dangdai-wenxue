@@ -25,7 +25,9 @@
 
   /* ---------- 文档坐标 ---------- */
   const X0_YEAR = YMIN - 1.5;                            // 1947.5
-  const stripW = (YMAX + 1.5 - X0_YEAR) * PXY;           // 长卷总宽
+  const PAD_Y = L.yearPad || 0;                          // 右端预留空白年数(长卷向未来延伸)
+  const DOC_END = YMAX + PAD_Y;                          // 文档右端年份
+  const stripW = (DOC_END - X0_YEAR) * PXY;              // 长卷总宽
   const docX = y => (y - X0_YEAR) * PXY;
   const eventYear = ev => ev.year + ((ev.month || 6) - 0.5) / 12;
 
@@ -37,66 +39,99 @@
   const clampPan = p => Math.max(0, Math.min(maxPan(), p));
   const clampPanY = p => Math.max(0, Math.min(maxPanY(), p));
 
-  /* ================= 数据准备（一次性静态排布） ================= */
+  /* ================= 数据准备(来源相关部分可重算) ================= */
   const impSet = new Set(D.important || []);
   const impRank = new Map((D.important || []).map((n, i) => [n, i]));
-  const majors = D.events.filter(e => e.priority === 1)
-    .sort((a, b) => a.year - b.year || (a.month || 6) - (b.month || 6));
-  const minors = D.events.filter(e => e.priority !== 1)
-    .sort((a, b) => a.year - b.year || (a.month || 6) - (b.month || 6));
-  const kindOK = d => d.kind === 'event' ? filterState.event : d.kind === 'policy' ? filterState.policy : filterState.work;
   const periodColor = year =>
     (CFG.periods.find(p => year >= p.from && year < p.to) || CFG.periods[0]).color;
   const kindColor = kind => (CFG.types[kind] || CFG.types.event).color;
   const trunc = (s, n) => [...s].length > n ? [...s].slice(0, n - 1).join('') + '…' : s;
 
-  // 主要事件卡：5 道贪心（文档坐标）
   const CARD_H = 38, CARD_GAP = 12, CARD_CHARS = 16;
   const cardW = t => [...t].length * 14 + 26;
-  {
-    const laneRight = [];
-    for (const ev of majors) {
-      const t = trunc(ev.title || ev.label, CARD_CHARS);
-      const w = cardW(t);
-      const X = docX(eventYear(ev));
-      const cardX = Math.max(8, Math.min(X - 10, stripW - w - 8));
-      let lane = -1;
-      for (let li = 0; li < 5; li++) {
-        if (!laneRight[li] || cardX > laneRight[li] + CARD_GAP) { lane = li; break; }
-      }
-      if (lane >= 0) laneRight[lane] = cardX + w;
-      Object.assign(ev, { _t: t, _w: w, _x: cardX, _lane: lane });
-    }
-  }
-  // 次要事件：4 道标签贪心，放不下的只留圆点
   const MINOR_CHARS = 14;
-  {
-    const laneRight = [];
-    for (const ev of minors) {
-      const X = docX(eventYear(ev));
-      const label = trunc(ev.label, MINOR_CHARS);
-      const lw = [...label].length * 11 + 14;
-      let lane = -1;
-      for (let li = 0; li < 4; li++) {
-        if (!laneRight[li] || X + 7 > laneRight[li] + 10) { lane = li; break; }
-      }
-      if (lane >= 0) laneRight[lane] = X + 7 + lw;
-      Object.assign(ev, { _label: label, _lane: lane });
+
+  const filterState = { event: true, policy: true, work: true, person: true, band: true };
+  const kindOK = d => d.kind === 'event' ? filterState.event : d.kind === 'policy' ? filterState.policy : filterState.work;
+
+  /* 编年口径:zhu=朱轨(默认) · hong=洪轨 · compare=双轨;词条印章恒全量 */
+  const srcMode = () => (window.APP_STATE && window.APP_STATE.source) || 'zhu';
+  const eventVisible = ev => {
+    const m = srcMode();
+    if (m === 'compare') {
+      // 洪年表已命中同题里程碑 → 策展独立卡由洪侧匹配卡代替,避免重复
+      return !(ev.src === 'curated' && ev.hongMatched);
     }
-  }
-  // 人物印章：按时期静态排列（每时期两行，宽度放不下即止）
+    if (m === 'hong') {
+      if (ev.src === 'curated' && ev.hongMatched) return false;
+      return ev.src === 'hong' || ev.src === 'curated';
+    }
+    return ev.src === 'zhu' || ev.src === 'curated';       // zhu(默认)
+  };
+  /* 比对模式下洪子诚年表整体移到主轴下方作点轨(_lane=-2) */
+  const hongBelow = () => srcMode() === 'compare';
+  const HONG_TRACK_Y = () => axisY + 46;
+
+  let majors = [], minors = [];
   const personsByPeriod = new Map(CFG.periods.map(p => [p.id, []]));
-  {
-    const clampY = y => Math.max(YMIN, Math.min(YMAX, y));
-    const periodOf = y => CFG.periods.find(p => y >= p.from && y < p.to) || (y < 1949 ? CFG.periods[0] : CFG.periods[4]);
-    for (const e of D.entities) {
-      if (e.type !== 'person' || !e.birth || !impSet.has(e.name)) continue;
-      personsByPeriod.get(periodOf(clampY(+e.birth + 28)).id).push(e);
+
+  function prepareData() {
+    for (const ev of D.events) { delete ev._lane; delete ev._t; delete ev._w; delete ev._x; delete ev._label; }
+    const evs = D.events.filter(eventVisible);
+    majors = evs.filter(e => e.priority === 1)
+      .sort((a, b) => a.year - b.year || (a.month || 6) - (b.month || 6));
+    if (hongBelow()) majors = majors.filter(e => e.src !== 'hong');   // 比对模式:洪侧里程碑以轨下锚点呈现,不挤上方卡区
+    minors = evs.filter(e => e.priority !== 1)
+      .sort((a, b) => a.year - b.year || (a.month || 6) - (b.month || 6));
+
+    // 主要事件卡:5 道贪心(文档坐标)
+    {
+      const laneRight = [];
+      for (const ev of majors) {
+        const t = trunc(ev.title || ev.label, CARD_CHARS);
+        const w = cardW(t);
+        const X = docX(eventYear(ev));
+        const cardX = Math.max(8, Math.min(X - 10, stripW - w - 8));
+        let lane = -1;
+        for (let li = 0; li < 5; li++) {
+          if (!laneRight[li] || cardX > laneRight[li] + CARD_GAP) { lane = li; break; }
+        }
+        if (lane >= 0) laneRight[lane] = cardX + w;
+        Object.assign(ev, { _t: t, _w: w, _x: cardX, _lane: lane });
+      }
     }
-    for (const arr of personsByPeriod.values())
-      arr.sort((a, b) => (impRank.get(a.name) ?? 999) - (impRank.get(b.name) ?? 999));
+    // 次要事件:4 道标签贪心,放不下的只留圆点;比对模式下洪轨只画点(-2 = 下方点轨)
+    {
+      const laneRight = [];
+      for (const ev of minors) {
+        if (hongBelow() && ev.src === 'hong') { ev._lane = -2; continue; }
+        const X = docX(eventYear(ev));
+        const label = trunc(ev.label, MINOR_CHARS);
+        const lw = [...label].length * 11 + 14;
+        let lane = -1;
+        for (let li = 0; li < 4; li++) {
+          if (!laneRight[li] || X + 7 > laneRight[li] + 10) { lane = li; break; }
+        }
+        if (lane >= 0) laneRight[lane] = X + 7 + lw;
+        Object.assign(ev, { _label: label, _lane: lane });
+      }
+    }
+    // 人物印章:按时期静态排列(策展名单,恒全量——词条不按编年口径拆分)
+    for (const k of personsByPeriod.keys()) personsByPeriod.set(k, []);
+    {
+      const clampY = y => Math.max(YMIN, Math.min(YMAX, y));
+      const periodOf = y => CFG.periods.find(p => y >= p.from && y < p.to) || (y < 1949 ? CFG.periods[0] : CFG.periods[4]);
+      for (const e of D.entities) {
+        if (e.type !== 'person' || !e.birth || !impSet.has(e.name)) continue;
+        personsByPeriod.get(periodOf(clampY(+e.birth + 28)).id).push(e);
+      }
+      for (const arr of personsByPeriod.values())
+        arr.sort((a, b) => (impRank.get(a.name) ?? 999) - (impRank.get(b.name) ?? 999));
+    }
   }
-  // 群体带：3 道贪心
+  prepareData();
+
+  // 群体带:3 道贪心(策展层,与来源无关)
   const bands = (D.bands || []).slice().sort((a, b) => (a.from - b.from) || (b.to - a.to));
   {
     const laneRight = [];
@@ -114,6 +149,7 @@
   /* ================= SVG 构建（全部使用文档坐标） ================= */
   let gContent, gFocusRing;
   let majorSel, minorSel, bandSel, periodSel;
+  let gWashes, gTicksEl, axisThinEl, axisThickEl, gMinorsEl;
 
   function build() {
     try {
@@ -130,8 +166,9 @@
 
       gContent = root.append('g').attr('class', 'g-content');
 
-      /* 时期底纹 */
-      gContent.selectAll('.wash').data(CFG.periods).join('rect')
+      /* 时期底纹（g-washes：入场显影整体淡入） */
+      gWashes = gContent.append('g').attr('class', 'g-washes');
+      gWashes.selectAll('.wash').data(CFG.periods).join('rect')
         .attr('class', 'wash')
         .attr('x', p => docX(p.from)).attr('width', p => (p.to - p.from) * PXY)
         .attr('y', 0).attr('height', '100%')
@@ -162,16 +199,21 @@
           .attr('x', xT).attr('y', 20).text(p.from + ' – ' + p.to);
       });
 
-      /* 主轴 + 年份刻度（每年一刻度） */
-      gContent.append('line').attr('class', 'axis-line')
+      /* 主轴 + 年份刻度（每年一刻度；轴线/刻度分组建档，供入场显影） */
+      const gAxis = gContent.append('g').attr('class', 'g-axis');
+      axisThickEl = gAxis.append('line').attr('class', 'axis-line')
         .attr('x1', 0).attr('x2', stripW).attr('y1', axisY).attr('y2', axisY)
         .attr('filter', 'url(#brush-wobble)')
-        .attr('stroke', 'var(--ink-1)').attr('stroke-width', 3).attr('stroke-linecap', 'round');
-      gContent.append('line')
+        .attr('stroke', 'var(--ink-1)').attr('stroke-width', 3).attr('stroke-linecap', 'round')
+        .node();
+      axisThinEl = gAxis.append('line')
         .attr('x1', 0).attr('x2', stripW).attr('y1', axisY).attr('y2', axisY)
-        .attr('stroke', 'var(--ink-0)').attr('stroke-width', 1).attr('opacity', .55);
+        .attr('stroke', 'var(--ink-0)').attr('stroke-width', 1).attr('opacity', .55)
+        .node();
+      const gTicks = gContent.append('g').attr('class', 'g-ticks');
+      gTicksEl = gTicks.node();
       const years = d3.range(YMIN, YMAX + 1);
-      const tickG = gContent.selectAll('.tick').data(years).join('g').attr('class', 'tick');
+      const tickG = gTicks.selectAll('.tick').data(years).join('g').attr('class', 'tick');
       tickG.append('line')
         .attr('x1', docX).attr('x2', docX)
         .attr('y1', axisY).attr('y2', d => axisY + (d % 10 === 0 ? 13 : 7))
@@ -182,6 +224,14 @@
         .attr('font-size', d => d % 10 === 0 ? 13 : 10.5)
         .attr('class', d => 'tl-year-label' + (d % 10 === 0 ? ' decade' : ''))
         .text(d => d);
+
+      /* 右端预留空白年:淡刻度提示长卷可向未来延伸 */
+      const fYears = d3.range(YMAX + 1, DOC_END + 1);
+      const fTickG = gTicks.selectAll('.ftick').data(fYears).join('g').attr('class', 'ftick');
+      fTickG.append('line')
+        .attr('x1', docX).attr('x2', docX)
+        .attr('y1', axisY).attr('y2', axisY + 7)
+        .attr('stroke', 'var(--ink-4)').attr('stroke-width', 1).attr('stroke-dasharray', '2,3');
 
       /* ④ 群体带（静态） */
       bandSel = gContent.selectAll('.band').data(bands.filter(b => b._lane >= 0)).join('g')
@@ -240,9 +290,12 @@
         }
       });
 
-      /* ② 次要事件（静态：标签或仅圆点） */
-      minorSel = gContent.selectAll('.minor').data(minors).join('g').attr('class', 'minor')
-        .style('cursor', 'pointer');
+      /* ② 次要事件（静态：标签或仅圆点；g-minors 整组建档）
+         比对模式下洪子诚年表(_lane=-2)不进标签区,另行渲染为轴下点轨 */
+      const gMinors = gContent.append('g').attr('class', 'g-minors');
+      gMinorsEl = gMinors.node();
+      minorSel = gMinors.selectAll('.minor').data(minors.filter(ev => ev._lane !== -2)).join('g')
+        .attr('class', 'minor').style('cursor', 'pointer');
       minorSel.each(function (ev) {
         const g = d3.select(this);
         const X = docX(eventYear(ev));
@@ -262,23 +315,75 @@
         g.append('title').text(ev.label + '（' + ev.year + '）');   // 原生悬停提示
       });
 
+      /* ②b 比对模式:洪子诚年表密度轨(轴下,赭橙)——
+         931 个逐条圆点在 46px/年 下会挤成实线,故按月聚合为密度细柱
+         (柱高∝当月条数,点击开当月首条),里程碑为大号锚点 */
+      const hongTrack = minors.filter(ev => ev._lane === -2);
+      const hongMajors = hongBelow() ? D.events.filter(ev => ev.src === 'hong' && ev.priority === 1) : [];
+      if (hongTrack.length || hongMajors.length) {
+        const ty = HONG_TRACK_Y();
+        const tg = gMinors.append('g').attr('class', 'hong-track');
+        tg.append('line').attr('class', 'hong-track-line')
+          .attr('x1', docX(1949)).attr('x2', docX(2000.5))
+          .attr('y1', ty).attr('y2', ty)
+          .attr('stroke', 'var(--src-hong)').attr('stroke-opacity', .4);
+        const byMonth = new Map();
+        for (const ev of hongTrack) {
+          const k = ev.year + '-' + (ev.month || 0);
+          const cur = byMonth.get(k) || { y: ev.year, m: ev.month || 0, n: 0, first: ev };
+          cur.n++;
+          byMonth.set(k, cur);
+        }
+        const hBars = tg.selectAll('.hong-bar').data([...byMonth.values()]).join('g')
+          .attr('class', 'hong-bar').style('cursor', 'pointer')
+          .on('click', (e, d) => window.openDrawerEvent(d.first));
+        hBars.append('rect')
+          .attr('x', d => docX(d.y + ((d.m || 6.5) - 0.5) / 12) - 1)
+          .attr('y', ty + 2)
+          .attr('width', 2)
+          .attr('height', d => Math.min(3 + d.n * 1.6, 15))
+          .attr('rx', 1)
+          .attr('fill', 'var(--src-hong)').attr('fill-opacity', .5);
+        hBars.append('title').text(d => `${d.y} 年${d.m ? ' ' + d.m + ' 月' : ' 本年'} · ${d.n} 条 · ${d.first.label.slice(0, 24)}…`);
+        const hAnchor = tg.selectAll('.hong-anchor').data(hongMajors).join('g')
+          .attr('class', 'hong-anchor').style('cursor', 'pointer')
+          .on('click', (e, d) => window.openDrawerEvent(d));
+        hAnchor.append('circle').attr('r', 8)
+          .attr('cx', ev => docX(eventYear(ev))).attr('cy', ty)
+          .attr('fill', 'var(--src-hong)').attr('opacity', .22).attr('filter', 'url(#ink-halo)');
+        hAnchor.append('circle').attr('r', 4.5)
+          .attr('cx', ev => docX(eventYear(ev))).attr('cy', ty)
+          .attr('fill', 'var(--src-hong)').attr('stroke', 'var(--paper-1)').attr('stroke-width', 1.2);
+        hAnchor.append('title').text(ev => `洪子诚年表 · ${ev.title || ev.label}（${ev.year}.${ev.month || ''}）`);
+        tg.append('text').attr('class', 'hong-track-label')
+          .attr('x', docX(1949)).attr('y', ty + 21)
+          .attr('font-size', 10).attr('fill', 'var(--src-hong)')
+          .attr('paint-order', 'stroke').attr('stroke', 'var(--paper-0)').attr('stroke-width', 3)
+          .text(`▼ 洪子诚年表 ${hongTrack.length} 条(逐月详编,止于 2000)· 柱高∝当月条数`);
+      }
+
       /* ② 主要事件卡（静态） */
       majorSel = gContent.selectAll('.major').data(majors).join('g').attr('class', 'major')
         .style('cursor', 'pointer');
       majorSel.each(function (ev) {
         const g = d3.select(this);
         const X = docX(eventYear(ev));
-        g.append('line')
-          .attr('x1', X).attr('x2', X)
-          .attr('y1', axisY - 4)
-          .attr('y2', ev._lane >= 0 ? zoneMajor.top + ev._lane * zoneMajor.laneH + CARD_H + 2 : axisY - 10)
-          .attr('stroke', '#b3342e').attr('stroke-width', 1).attr('stroke-dasharray', '3,4').attr('opacity', .4);
-        g.append('circle').attr('r', 8)
-          .attr('cx', X).attr('cy', axisY)
-          .attr('fill', '#b3342e').attr('opacity', .22).attr('filter', 'url(#ink-halo)');
-        g.append('circle').attr('r', 5)
-          .attr('cx', X).attr('cy', axisY)
-          .attr('fill', '#b3342e').attr('stroke', 'var(--paper-1)').attr('stroke-width', 1.5);
+        const hong = ev.src === 'hong';
+        const accent = hong ? 'var(--src-hong)' : '#b3342e';   // 洪侧里程碑卡用洪源色
+        const below = hong && hongBelow();                     // 比对模式:洪侧锚点在轴下密度轨,不画轴上点
+        if (!below) {
+          g.append('line')
+            .attr('x1', X).attr('x2', X)
+            .attr('y1', axisY - 4)
+            .attr('y2', ev._lane >= 0 ? zoneMajor.top + ev._lane * zoneMajor.laneH + CARD_H + 2 : axisY - 10)
+            .attr('stroke', accent).attr('stroke-width', 1).attr('stroke-dasharray', '3,4').attr('opacity', .4);
+          g.append('circle').attr('r', 8)
+            .attr('cx', X).attr('cy', axisY)
+            .attr('fill', accent).attr('opacity', .22).attr('filter', 'url(#ink-halo)');
+          g.append('circle').attr('r', 5)
+            .attr('cx', X).attr('cy', axisY)
+            .attr('fill', accent).attr('stroke', 'var(--paper-1)').attr('stroke-width', 1.5);
+        }
         if (ev._lane >= 0) {
           const cy = zoneMajor.top + ev._lane * zoneMajor.laneH;
           g.append('rect')
@@ -287,7 +392,7 @@
             .style('filter', 'drop-shadow(0 2px 5px var(--paper-shadow))');
           g.append('rect')
             .attr('x', ev._x).attr('y', cy).attr('width', 3).attr('height', CARD_H).attr('rx', 1.5)
-            .attr('fill', kindColor(ev.kind));
+            .attr('fill', hong ? accent : kindColor(ev.kind));
           g.append('text')
             .attr('x', ev._x + 11).attr('y', cy + 16)
             .attr('font-size', 13.5).attr('fill', 'var(--ink-0)')
@@ -295,14 +400,14 @@
             .text(ev._t);
           g.append('text')
             .attr('x', ev._x + 11).attr('y', cy + 30)
-            .attr('font-size', 9.5).attr('fill', '#b3342e')
+            .attr('font-size', 9.5).attr('fill', accent)
             .text(ev.year + (ev.month ? '.' + ev.month : ''));
         }
-        g.append('title').text((ev.title || ev.label) + '（' + ev.year + '.' + (ev.month || '') + '）');
+        g.append('title').text((hong ? '洪子诚年表 · ' : '') + (ev.title || ev.label) + '（' + ev.year + '.' + (ev.month || '') + '）');
       });
 
-      /* 聚焦环（最上层） */
-      gFocusRing = gContent.append('g').attr('class', 'focus-ring').attr('display', 'none');
+      /* 聚焦环（最上层；显隐走 .show 类的 opacity 过渡） */
+      gFocusRing = gContent.append('g').attr('class', 'focus-ring');
       gFocusRing.append('rect')
         .attr('rx', 6).attr('fill', 'rgba(179,52,46,.06)')
         .attr('stroke', 'var(--cinnabar)').attr('stroke-width', 1.6)
@@ -355,7 +460,7 @@
     if (state.zoom < FOCUS_Z) {
       if (focused) {
         focused = null;
-        gFocusRing.attr('display', 'none');
+        gFocusRing.classed('show', false);
         const drawerEl = document.getElementById('drawer');
         const titleEl = document.getElementById('drawer-title');
         if (drawerEl.classList.contains('open') && titleEl.textContent === lastAutoTitle) {
@@ -381,16 +486,17 @@
         focused = best;
         if (bestIsMajor) {
           const cy = zoneMajor.top + best._lane * zoneMajor.laneH;
-          gFocusRing.attr('display', null);
+          gFocusRing.classed('show', true);
           gFocusRing.select('rect').attr('display', null)
             .attr('x', best._x - 5).attr('y', cy - 5)
             .attr('width', best._w + 10).attr('height', CARD_H + 10);
           gFocusRing.select('circle').attr('display', 'none');
         } else {
-          gFocusRing.attr('display', null);
+          gFocusRing.classed('show', true);
           gFocusRing.select('rect').attr('display', 'none');
           gFocusRing.select('circle').attr('display', null)
-            .attr('cx', docX(eventYear(best))).attr('cy', axisY)
+            .attr('cx', docX(eventYear(best)))
+            .attr('cy', best._lane === -2 ? HONG_TRACK_Y() : axisY)   // 比对模式:洪轨点在轴下
             .attr('r', 10);
         }
         lastAutoTitle = best.title || best.label;
@@ -398,20 +504,19 @@
       }
     } else if (focused) {
       focused = null;
-      gFocusRing.attr('display', 'none');
+      gFocusRing.classed('show', false);
     }
   }
   let lastAutoTitle = '';
 
   /* ================= 交互 ================= */
-  const filterState = { event: true, policy: true, work: true, person: true, band: true };
 
   function applyFilters() {
-    majorSel.attr('display', d => kindOK(d) ? null : 'none');
-    minorSel.attr('display', d => kindOK(d) ? null : 'none');
-    d3.selectAll('.band').attr('display', filterState.band ? null : 'none');
-    d3.selectAll('.seal').attr('display', filterState.person ? null : 'none');
-    // 父组（时期印章容器）不隐藏，由子元素控制
+    majorSel.classed('off', d => !kindOK(d));
+    minorSel.classed('off', d => !kindOK(d));
+    d3.selectAll('.band').classed('off', !filterState.band);
+    d3.selectAll('.seal').classed('off', !filterState.person);
+    d3.selectAll('.hong-track').classed('off', !filterState.event);
   }
 
   function bindInteractions() {
@@ -420,6 +525,7 @@
     // 滚轮 = 屏幕缩放（锚定光标，横纵同时）
     tlView.onwheel = e => {
       e.preventDefault();
+      stopInertia(); cancelTween();
       const rect = svg.getBoundingClientRect();
       const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
       const docAt = state.pan + sx / state.zoom;
@@ -431,13 +537,34 @@
       requestRender();
     };
 
-    // 拖拽 = 平移（横向 + 纵向）
+    // 拖拽 = 平移（横向 + 纵向），松手带惯性
     let dragging = false, dragX = 0, dragY = 0, pan0 = 0, panY0 = 0, moved = false;
+    let velX = 0, velY = 0, lastMoveT = 0, prevCX = 0, prevCY = 0;
+    const sampleVel = (cx, cy, dt, store) => {
+      if (dt >= 4 && dt < 120) {
+        const k = 0.3;
+        store.x = (1 - k) * store.x + k * (cx - store.px) / dt;
+        store.y = (1 - k) * store.y + k * (cy - store.py) / dt;
+        store.t = performance.now();
+      } else if (dt >= 120) {
+        store.x = 0; store.y = 0; store.t = performance.now();
+      }
+      store.px = cx; store.py = cy;
+    };
+    const flickVel = store => {
+      if (performance.now() - store.t > 90) return null;
+      const sp = Math.hypot(store.x, store.y);
+      if (sp < 0.12) return null;
+      const cap = Math.min(2.6, sp) / sp;      // 限幅，防过猛
+      return [store.x * cap, store.y * cap];
+    };
     tlView.onmousedown = e => {
       if (e.target.closest('#tl-filters') || e.target.closest('#tl-minimap')) return;
+      stopInertia(); cancelTween();
       dragging = true; moved = false;
-      dragX = e.clientX; dragY = e.clientY;
+      dragX = prevCX = e.clientX; dragY = prevCY = e.clientY;
       pan0 = state.pan; panY0 = state.panY;
+      velX = 0; velY = 0; lastMoveT = performance.now();
       tlView.classList.add('dragging');
     };
     window.addEventListener('mousemove', e => {
@@ -446,14 +573,27 @@
       if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
       state.pan = clampPan(pan0 - dx / state.zoom);
       state.panY = clampPanY(panY0 - dy / state.zoom);
+      const dt = performance.now() - lastMoveT;
+      if (dt > 0) { velX = 0.7 * velX + 0.3 * (e.clientX - prevCX) / dt; velY = 0.7 * velY + 0.3 * (e.clientY - prevCY) / dt; }
+      lastMoveT = performance.now(); prevCX = e.clientX; prevCY = e.clientY;
       requestRender();
     });
-    window.addEventListener('mouseup', () => { dragging = false; tlView.classList.remove('dragging'); });
+    window.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      tlView.classList.remove('dragging');
+      const v = { x: velX, y: velY, px: prevCX, py: prevCY, t: lastMoveT };
+      const f = flickVel(v);
+      if (f) startInertia(f[0], f[1]);
+    });
 
-    // 触摸平移 + 双指缩放
+    // 触摸平移 + 双指缩放（单指松手带惯性）
     let tPrev = null;
+    const tStore = { x: 0, y: 0, px: 0, py: 0, t: 0 };
     tlView.ontouchstart = e => {
+      stopInertia(); cancelTween();
       tPrev = [...e.touches].map(t => ({ x: t.clientX, y: t.clientY }));
+      Object.assign(tStore, { x: 0, y: 0, px: tPrev[0] ? tPrev[0].x : 0, py: tPrev[0] ? tPrev[0].y : 0, t: performance.now() });
     };
     tlView.ontouchmove = e => {
       e.preventDefault();
@@ -461,6 +601,7 @@
       if (tPrev && tPrev.length === 1 && ts.length === 1) {
         state.pan = clampPan(state.pan - (ts[0].x - tPrev[0].x) / state.zoom);
         state.panY = clampPanY(state.panY - (ts[0].y - tPrev[0].y) / state.zoom);
+        sampleVel(ts[0].x, ts[0].y, performance.now() - tStore.t, tStore);
       } else if (tPrev && tPrev.length === 2 && ts.length === 2) {
         const d0 = Math.hypot(tPrev[0].x - tPrev[1].x, tPrev[0].y - tPrev[1].y);
         const d1 = Math.hypot(ts[0].x - ts[1].x, ts[0].y - ts[1].y);
@@ -474,11 +615,16 @@
       tPrev = ts;
       requestRender();
     };
-    tlView.ontouchend = () => { tPrev = null; };
+    tlView.ontouchend = () => {
+      const f = tPrev && tPrev.length === 1 ? flickVel(tStore) : null;
+      if (f) startInertia(f[0], f[1]);
+      tPrev = null;
+    };
 
     // 点击 → 详情抽屉
     majorSel.on('click', (e, d) => { if (!moved) window.openDrawerEvent(d); });
     minorSel.on('click', (e, d) => { if (!moved) window.openDrawerEvent(d); });
+    gContent.selectAll('.hong-dot').on('click', (e, d) => { if (!moved) window.openDrawerEvent(d); });
     bandSel.on('click', (e, d) => { if (!moved) window.openWikiPage(d.name); });
   }
 
@@ -496,6 +642,13 @@
       `<span style="display:inline-flex;align-items:center;gap:3px;margin:2px 4px 2px 0">
         <span style="width:8px;height:8px;border-radius:2px;background:${p.color}"></span>
         <span style="font-size:11px">${p.short}</span></span>`).join('');
+    const srcDots = [
+      ['--src-hong', '洪子诚 · 年表密度轨/洪侧卡片'],
+      ['--src-zhu', '朱栋霖 · 口径标识(徽章/图谱环)'],
+    ].map(([v, label]) =>
+      `<span style="display:inline-flex;align-items:center;gap:3px;margin:2px 6px 2px 0">
+        <span style="width:8px;height:8px;border-radius:2px;background:var(${v})"></span>
+        <span style="font-size:11px">${label}</span></span>`).join('');
     box.innerHTML = `
       <div class="fl-title fl-toggle">图 例 <span class="fl-arrow">▾</span></div>
       <div class="fl-body">
@@ -504,7 +657,10 @@
           <span class="dot" style="background:${color}"></span>${label}</label>`).join('')}
       <div class="fl-title" style="margin-top:8px">时期底色</div>
       <div>${periodDots}</div>
-      <div class="fl-hint">左右拖动浏览长卷<br>滚轮放大 → 聚焦中心事件</div>
+      <div class="fl-title" style="margin-top:8px">两史来源</div>
+      <div>${srcDots}</div>
+      <div class="fl-hint">比对模式:轴下洪子诚年表按月聚合为密度柱(柱高∝当月条数,止于 2000),里程碑为大号锚点;<br>朱栋霖大事记提要式,至 2018。长卷右端预留空白,可向未来延伸。</div>
+      <div class="fl-hint">左右拖动浏览长卷 · 滚轮放大 → 聚焦中心事件</div>
       </div>`;
     box.querySelector('.fl-toggle').addEventListener('click', () => box.classList.toggle('collapsed'));
     box.querySelectorAll('input[type=checkbox]').forEach(cb =>
@@ -521,7 +677,7 @@
     wrap.innerHTML = '';
     mmW = wrap.clientWidth || (window.innerWidth - 32);
     const h = 46;
-    const xOf = year => (year - X0_YEAR) / (YMAX + 1.5 - X0_YEAR) * mmW;
+    const xOf = year => (year - X0_YEAR) / (DOC_END - X0_YEAR) * mmW;
 
     mm = d3.select(wrap).append('svg');
     mm.attr('width', mmW).attr('height', h);
@@ -592,13 +748,16 @@
     mmDimR.attr('x', x0 + vw).attr('width', Math.max(0, mmW - x0 - vw));
   }
 
-  /* ================= 平滑定位（搜索/深链/回位） ================= */
+  /* ================= 平滑定位（搜索/深链/回位/键盘平移） ================= */
   let tween = null;
-  function animateTo(targetPan, targetZoom, targetPanY = 0, ms = 600) {
-    if (tween) cancelAnimationFrame(tween);
+  function cancelTween() { if (tween) { cancelAnimationFrame(tween); tween = null; } }
+  function animateTo(targetPan, targetZoom, targetPanY = 0, ms = 600, easeKind = 'inout') {
+    cancelTween(); stopInertia();
     const p0 = state.pan, z0 = state.zoom, y0 = state.panY;
     const t0 = performance.now();
-    const ease = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    const easeInOut = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    const easeOut = t => 1 - Math.pow(1 - t, 3);
+    const ease = easeKind === 'out' ? easeOut : easeInOut;
     const step = now => {
       const t = Math.min(1, (now - t0) / ms);
       const k = ease(t);
@@ -609,6 +768,88 @@
       if (t < 1) tween = requestAnimationFrame(step); else tween = null;
     };
     tween = requestAnimationFrame(step);
+  }
+
+  /* ---------- 拖拽释放惯性（指数衰减，撞边界即停） ---------- */
+  let inertiaRaf = null;
+  function stopInertia() { if (inertiaRaf) { cancelAnimationFrame(inertiaRaf); inertiaRaf = null; } }
+  function startInertia(vx, vy) {           // 屏幕速度 px/ms（向右拖为正）
+    if (window.prefersReducedMotion && window.prefersReducedMotion()) return;
+    stopInertia();
+    const tau = 325;
+    let last = performance.now();
+    const step = now => {
+      const dt = Math.min(64, now - last); last = now;
+      const decay = Math.exp(-dt / tau);
+      vx *= decay; vy *= decay;
+      const p0 = state.pan, y0 = state.panY;
+      state.pan = clampPan(state.pan - vx * dt / state.zoom);
+      state.panY = clampPanY(state.panY - vy * dt / state.zoom);
+      requestRender();
+      if (Math.hypot(vx, vy) < 0.02 || (state.pan === p0 && state.panY === y0)) {
+        inertiaRaf = null; return;         // 速度耗尽或撞到边界
+      }
+      inertiaRaf = requestAnimationFrame(step);
+    };
+    inertiaRaf = requestAnimationFrame(step);
+  }
+
+  /* ================= 首次入场：长卷显影（一次性仪式） =================
+     时期底纹淡入 → 主轴细线自左向右画出 → 粗笔落墨 → 年份刻度浮现
+     → 时期题字错峰 → 群体带/事件卡按时间位置自右向左错峰显影。 */
+  let introPlayed = false;
+  function playIntro() {
+    if (introPlayed || !gContent) return;
+    introPlayed = true;
+    if (window.prefersReducedMotion && window.prefersReducedMotion()) return;
+    const BRUSH = 'cubic-bezier(.22,.8,.3,1)';
+    const delayAt = x => Math.min(950, Math.max(0, x / stripW * 900));   // 按文档 x 错峰
+    const anim = (node, kf, opt) => {
+      if (!node || !node.animate) return;
+      const a = node.animate(kf, Object.assign({ easing: BRUSH, fill: 'both' }, opt));
+      a.finished.then(() => a.cancel()).catch(() => {});   // 结束即清除，交还自然态
+    };
+    anim(gWashes && gWashes.node(), [{ opacity: 0 }, { opacity: 1 }], { duration: 600 });
+    // 主轴：先画无滤镜细线（逐帧重算 feTurbulence 代价高），粗笔随后落墨
+    if (axisThinEl) {
+      axisThinEl.style.strokeDasharray = String(stripW);
+      anim(axisThinEl,
+        [{ strokeDashoffset: stripW + 'px' }, { strokeDashoffset: '0px' }],
+        { duration: 1100, delay: 80, easing: 'cubic-bezier(.45,.05,.35,1)' });
+    }
+    anim(axisThickEl, [{ opacity: 0 }, { opacity: 1 }], { duration: 450, delay: 950 });
+    anim(gTicksEl, [{ opacity: 0 }, { opacity: 1 }], { duration: 500, delay: 650 });
+    if (periodSel) periodSel.each(function (p, i) {
+      anim(this, [{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }],
+        { duration: 500, delay: 150 + i * 120 });
+    });
+    if (bandSel) bandSel.each(function (b) {
+      anim(this, [{ opacity: 0 }, { opacity: 1 }],
+        { duration: 450, delay: delayAt(docX(b.from)) });
+    });
+    d3.selectAll('.period-seals').each(function (p, i) {
+      d3.select(this).selectAll('.seal').each(function () {
+        anim(this, [{ opacity: 0 }, { opacity: 1 }],
+          { duration: 400, delay: 250 + i * 120 + Math.random() * 150 });
+      });
+    });
+    if (majorSel) majorSel.each(function (ev) {
+      anim(this, [{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'none' }],
+        { duration: 450, delay: 200 + delayAt(docX(eventYear(ev))) });
+    });
+    anim(gMinorsEl, [{ opacity: 0 }, { opacity: 1 }], { duration: 500, delay: 1250 });
+  }
+  function maybePlayIntro() {
+    if (introPlayed) return;
+    // 卷轴已在拉开（或已移除）→ 立即显影；否则等它开始
+    if (window.__curtainOpening || !document.getElementById('curtain')) { playIntro(); return; }
+    const t0 = Date.now();
+    const poll = setInterval(() => {
+      if (window.__curtainOpening || !document.getElementById('curtain') || Date.now() - t0 > 2600) {
+        clearInterval(poll);
+        playIntro();
+      }
+    }, 100);
   }
 
   /* ================= 外部控制 ================= */
@@ -629,7 +870,7 @@
     },
     overview() { animateTo(0, minZoom(), 0); },
     setZoom(z) { animateTo(state.pan + (W / 2) / state.zoom - (W / 2) / z, z, state.panY, 350); },
-    panBy(dx) { state.pan = clampPan(state.pan + dx); requestRender(); },
+    panBy(dx) { animateTo(state.pan + dx, state.zoom, state.panY, 220, 'out'); },
     goYear(y) { this.focusYear(y + 0.5, Math.max(state.zoom, 1)); },
     /* 下一个/上一个里程碑事件（自动聚焦并展开详情） */
     nextEvent(dir) {
@@ -667,13 +908,21 @@
     init() {
       if (inited) return;
       inited = true;
+      prepareData();       // 以当前来源模式(可能来自深链/本地存储)重排
       onResize();          // 含 build() 与 buildMinimap()
       buildFilters();
       window.addEventListener('resize', onResize);
+      maybePlayIntro();    // 首次显影仪式（与卷轴开幕对齐，仅此一次）
     },
     onShow(params) {
       if (params && params.focus) this.focusDone !== params.focus &&
         (this.focusDone = params.focus, window.TL.focusYear(+params.focus + 0.5));
+    },
+    /* 来源切换:重排数据 + 重建长卷与缩略图 */
+    onSourceChange() {
+      if (!inited) return;             // 未 init 时由 init 按当前模式构建
+      prepareData();
+      onResize();
     },
   };
 

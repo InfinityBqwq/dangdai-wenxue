@@ -29,8 +29,70 @@
     return normIndex.get(n) || null;
   }
 
+  /* ---------------- 来源模式(编年口径) ----------------
+     编年是两套(朱栋霖大事记 / 洪子诚年表),模式只切换编年轨;
+     词条卡恒显示全部,并排两书"各自怎么说"的口径对照块。 */
+  const SRC_KEY = 'wenxue-src';
+  const SRC_MODES = (CFG.sources && CFG.sources.modes) || [];
+  const SRC_TOAST = {
+    zhu: '编年:朱栋霖大事记(默认口径)',
+    hong: '编年:洪子诚年表(1949—2000,逐月详编)',
+    compare: '编年双轨:轴上朱记 · 轴下洪表(词条卡恒并排两书说法)',
+  };
+  window.APP_STATE = window.APP_STATE || {};
+  {
+    let saved = null;
+    try { saved = localStorage.getItem(SRC_KEY); } catch (_) { /* file:// 下可能禁用 */ }
+    if (saved === 'all') saved = 'zhu';                 // 旧值迁移
+    window.APP_STATE.source = SRC_MODES.some(m => m.id === saved) ? saved : 'zhu';
+  }
+  const srcMode = () => window.APP_STATE.source;
+  const srcMeta = s => (CFG.sources && CFG.sources.meta && CFG.sources.meta[s]) ||
+    { label: s, short: s, color: 'var(--ink-3)' };
+  /* 编年事件在当前模式下是否可见(洪/比对模式下,已被洪年表命中的策展独立卡隐藏,由洪侧同题卡代替) */
+  function eventVisible(ev) {
+    const m = srcMode();
+    if (m === 'compare') return !(ev.src === 'curated' && ev.hongMatched);
+    if (m === 'hong') {
+      if (ev.src === 'curated' && ev.hongMatched) return false;
+      return ev.src === 'hong' || ev.src === 'curated';
+    }
+    return ev.src === 'zhu' || ev.src === 'curated';       // zhu(默认)
+  }
+  window.APP_STATE.srcMode = srcMode;
+  window.APP_STATE.eventVisible = eventVisible;
+  window.APP_STATE.srcMeta = srcMeta;
+
   /* ---------------- 工具 ---------------- */
   const $ = sel => document.querySelector(sel);
+
+  // 全站动画开关：减动效偏好下，JS 补间直接跳终态
+  const prefersReducedMotion = () =>
+    window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.prefersReducedMotion = prefersReducedMotion;
+
+  /* ---------------- 顶栏 Tab 墨条滑动指示器 ---------------- */
+  function moveTabInk(animate) {
+    const tabs = document.getElementById('view-tabs');
+    if (!tabs) return;
+    let ink = document.getElementById('tab-ink');
+    if (!ink) {
+      ink = document.createElement('div');
+      ink.id = 'tab-ink';
+      tabs.appendChild(ink);
+    }
+    const btn = tabs.querySelector('button.active');
+    if (!btn) return;
+    const tw = tabs.getBoundingClientRect();
+    const bw = btn.getBoundingClientRect();
+    const w = Math.max(16, Math.min(34, bw.width - 28));
+    const first = !ink.style.transform;          // 首次定位不滑动
+    if (animate && !first) ink.classList.add('moving'); else ink.classList.remove('moving');
+    ink.style.width = w + 'px';
+    ink.style.transform = `translateX(${bw.left - tw.left + (bw.width - w) / 2}px)`;
+  }
+  window.moveTabInk = moveTabInk;
+  window.addEventListener('resize', () => moveTabInk(false));
 
   function toast(msg, ms = 1800) {
     const t = $('#toast');
@@ -74,8 +136,14 @@
     return html;
   }
 
-  // 抽屉/正文中 wikilink 点击（事件委托）
+  // 抽屉/正文中 wikilink 点击 + 编年条目交叉引用（事件委托）
   document.addEventListener('click', e => {
+    const cx = e.target.closest('[data-cross]');
+    if (cx) {
+      const ev = eventById.get(cx.dataset.cross);
+      if (ev) openDrawerEvent(ev);
+      return;
+    }
     const wl = e.target.closest('.wikilink');
     if (wl) {
       const name = resolveName(wl.dataset.target);
@@ -87,6 +155,14 @@
   /* ---------------- 详情抽屉 ---------------- */
   const drawer = $('#drawer');
   const typeMeta = t => CFG.types[t] || CFG.types.other;
+
+  // 内容换装：重触发三段错峰淡入
+  function swapDrawer() {
+    if (prefersReducedMotion()) return;
+    drawer.classList.remove('swap');
+    void drawer.offsetWidth;
+    drawer.classList.add('swap');
+  }
 
   function badge(text, color, solid) {
     return `<span class="badge${solid ? ' solid' : ''}" style="color:${solid ? color : 'var(--ink-2)'};${solid ? '' : `border-color:${color}55`}">${esc(text)}</span>`;
@@ -101,27 +177,117 @@
       <button data-act="obsidian" data-uri="${esc(obsidianUri)}">✎ Obsidian 打开</button>`;
   }
 
+  /* ---------- 两书口径对照(抽屉 + Wiki 共用):同一个词条,两书原话并排 ---------- */
+  function cmpColHtml(book, data, note, e) {
+    const meta = srcMeta(book);
+    const info = (D.books && D.books[book]) || {};
+    const head = `${meta.label}《${info.title || ''}》`;
+    if (!data || !data.n) {
+      return `<div class="cmp-col">
+        <div class="cmp-book"><span class="sdot" style="background:${meta.color}"></span>${esc(head)}</div>
+        <div class="cmp-none">本书未提及「${esc(e.name)}」</div>
+        ${note ? `<div class="cmp-note">${esc(note)}</div>` : ''}
+      </div>`;
+    }
+    /* 原文摘段:这本书在哪几节着重讲,原话怎么说 */
+    const ps = (data.ps || []).map(p => `
+      <div class="cmp-passage">
+        ${p.s ? `<div class="cmp-psect" style="color:${meta.color}">◈ ${p.s.split(' > ').map(esc).join(' <span class="cmp-sep">›</span> ')}</div>` : ''}
+        <div class="cmp-ptext">${esc(p.t)}</div>
+      </div>`).join('');
+    /* 未入选摘段的其余章节,去重后收成一行"另见" */
+    const seen = new Set((data.ps || []).map(p => p.s));
+    const restChaps = [...new Set((data.chs || []).filter(c => !seen.has(c)).map(c => c.split(' > ')[0]))];
+    return `<div class="cmp-col">
+      <div class="cmp-book"><span class="sdot" style="background:${meta.color}"></span>${esc(head)}</div>
+      <div class="cmp-stat">提及 ${data.n} 处 · ${data.sn} 个章节小节</div>
+      ${ps}
+      ${restChaps.length ? `<div class="cmp-more">另见:${restChaps.slice(0, 3).map(esc).join(' · ')}${restChaps.length > 3 ? ' 等' : ''}</div>` : ''}
+      ${note ? `<div class="cmp-note">${esc(note)}</div>` : ''}
+    </div>`;
+  }
+  function compareBlockHtml(e) {
+    if (!e || e.type === 'note') return '';
+    const cmp = e.cmp || {};
+    const hasNote = cmp.note && (cmp.note.hong || cmp.note.zhu);
+    if (!cmp.hong && !cmp.zhu && !hasNote && !(e.src || []).length) return '';
+    const note = cmp.note || {};
+    return `<div class="cmp-block">
+      <div class="cmp-title"><span>两史口径对照</span><span class="cmp-hint">同一词条,两部文学史各自怎么讲</span></div>
+      <div class="cmp-cols">${cmpColHtml('hong', cmp.hong, note.hong, e)}${cmpColHtml('zhu', cmp.zhu, note.zhu, e)}</div>
+    </div>`;
+  }
+  window.compareBlockHtml = compareBlockHtml;
+
+  /* 来源徽章:该卡片的引用出处(洪/朱) */
+  function srcBadgesHtml(e) {
+    return (e.src || []).map(b => {
+      const meta = srcMeta(b);
+      return badge('● ' + meta.label, meta.color.startsWith('var') ? cssVar(meta.color) : meta.color);
+    }).join('');
+  }
+  const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  function srcRefsLine(e) {
+    const refs = e.srcRefs || [];
+    if (!refs.length) return '';
+    return `<h3>卡片出处</h3><p>${refs.map(r =>
+      `<span style="color:${cssVar(r.book === 'hong' ? '--src-hong' : '--src-zhu')}">◆</span> ${esc(r.label)}`).join('<br>')}</p>`;
+  }
+
   function openDrawerEntity(name) {
     const e = entityByName.get(name);
     if (!e) return;
     const tm = typeMeta(e.type);
     $('#drawer-kicker').innerHTML = badge(tm.label, tm.color, true) +
       (e.era ? badge(String(e.era).replace(/年代$/, '') + ' 年代', tm.color) : '') +
-      (e.status ? badge(e.status, tm.color) : '');
+      (e.status ? badge(e.status, tm.color) : '') + srcBadgesHtml(e);
     $('#drawer-title').textContent = e.title;
     const dates = [];
     if (e.birth) dates.push(e.birth + (e.death ? '—' + e.death : '—'));
     if (e.role) dates.push(e.role);
     $('#drawer-sub').textContent = dates.join(' · ');
     const body = stripTitleHeading(e.body || e.summary || '（占位卡片，尚未撰写正文）');
-    $('#drawer-body').innerHTML = renderWiki(body);
+    $('#drawer-body').innerHTML = renderWiki(body) + srcRefsLine(e) + compareBlockHtml(e);
     $('#drawer-actions').innerHTML = crossActions(e.name);
+    swapDrawer();
     drawer.classList.add('open');
+  }
+
+  /* 编年事件来源徽章 + 另一史年表交叉引用 */
+  const EVENT_SRC = { hong: '洪子诚年表', zhu: '朱栋霖大事记', curated: '策展里程碑' };
+  function eventSrcBadge(ev) {
+    const label = EVENT_SRC[ev.src] || '编年事件';
+    const meta = srcMeta(ev.src === 'zhu' ? 'zhu' : ev.src === 'hong' ? 'hong' : 'curated');
+    return badge('● ' + label, cssVar(meta.color) || '#8a8272');
+  }
+  function crossChronicle(ev) {
+    if (!ev.src || ev.src === 'curated') return '';
+    const other = ev.src === 'hong' ? 'zhu' : 'hong';
+    const cands = D.events.filter(x => x.src === other && x.year === ev.year && x.id !== ev.id);
+    if (!cands.length) return '';
+    const tokens = t => {
+      const s = new Set();
+      for (const m of String(t).matchAll(/\[\[([^\]|]+)/g)) s.add(m[1].trim());
+      for (const m of String(t).matchAll(/《([^》]+)》/g)) s.add(m[1]);
+      return s;
+    };
+    const a = tokens(ev.text);
+    const scored = cands.map(c => {
+      const b = tokens(c.text);
+      let sc = 0;
+      for (const t of a) if (b.has(t)) sc++;
+      return { c, sc };
+    }).sort((x, y) => y.sc - x.sc).filter(x => x.sc > 0).slice(0, 2);
+    if (!scored.length) return '';
+    return `<h3>另一史对照 · ${esc(EVENT_SRC[other])}</h3><p>${scored.map(({ c }) =>
+      `<span class="wikilink" style="color:var(--cinnabar)" data-cross="${esc(c.id)}">${esc(c.year + '年' + (c.month ? c.month + '月' : '') + ' · ' + (c.title || c.label).slice(0, 32))}</span>`
+    ).join('<br>')}</p>`;
   }
 
   function openDrawerEvent(ev) {
     const tm = typeMeta(ev.kind);
     $('#drawer-kicker').innerHTML = badge(ev.milestone ? '里程碑' : '编年事件', tm.color, true) +
+      eventSrcBadge(ev) +
       badge(ev.period ? (CFG.periods.find(p => p.id === ev.period) || {}).short || '' : '', tm.color);
     $('#drawer-title').textContent = ev.title || ev.label;
     const dateStr = `${ev.year} 年${ev.month ? ' ' + ev.month + ' 月' : ''}${ev.day ? ' ' + ev.day + ' 日' : ''}`;
@@ -139,10 +305,12 @@
         return name ? `<span class="wikilink" data-target="${esc(r)}">${esc(r)}</span>` : esc(r);
       }).join('　')}</p>`;
     }
+    html += crossChronicle(ev);
     $('#drawer-body').innerHTML = html;
     $('#drawer-actions').innerHTML = `
       <button data-act="timeline-focus" data-year="${ev.year}">⇲ 时间轴定位 ${ev.year}</button>
       ${crossActions(ev.title || ev.label, 'event').replace('📖 Wiki 阅读', '🔍 搜索同名卡片')}`;
+    swapDrawer();
     drawer.classList.add('open');
   }
 
@@ -155,6 +323,7 @@
     $('#drawer-sub').textContent = '';
     $('#drawer-body').innerHTML = renderWiki(n.body);
     $('#drawer-actions').innerHTML = crossActions(n.name, 'note');
+    swapDrawer();
     drawer.classList.add('open');
   }
 
@@ -205,6 +374,15 @@
     document.getElementById('view-' + view).classList.add('active');
     document.querySelectorAll('#view-tabs button').forEach(b =>
       b.classList.toggle('active', b.dataset.view === view));
+    moveTabInk(true);
+    // 重启动画（display:none→block 重新挂载时 animation 会自动重放，
+    // 但同视图深链跳转不换 class，这里统一重触发一次）
+    const viewEl = document.getElementById('view-' + view);
+    if (!prefersReducedMotion()) {
+      viewEl.style.animation = 'none';
+      void viewEl.offsetWidth;
+      viewEl.style.animation = '';
+    }
     // 更新 hash（不触发重复路由）
     const q = new URLSearchParams(
       Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, v])
@@ -229,24 +407,37 @@
     if (m[2]) new URLSearchParams(m[2]).forEach((v, k) => params[k] = v);
     // 类型修正
     if (params.focus) params.focus = +params.focus;
+    // 来源深链(#/timeline?src=hong)
+    if (params.src && params.src !== srcMode() && SRC_MODES.some(x => x.id === params.src))
+      setSource(params.src, { fromHash: true });
     switchView(m[1], params);
   }
   window.addEventListener('hashchange', routeFromHash);
 
-  /* ---------------- 全局搜索 ---------------- */
-  const searchIndex = [];
-  D.entities.forEach(e => searchIndex.push({
-    kind: 'entity', name: e.name, type: e.type, meta: typeMeta(e.type).label + (e.birth ? ' · ' + e.birth + (e.death ? '—' + e.death : '') : ''),
-    text: e.name + ' ' + (e.tags || []).join(' ') + ' ' + (e.summary || ''),
-  }));
-  D.notes.forEach(n => searchIndex.push({
-    kind: 'note', name: n.name, type: 'note', meta: '分期笔记',
-    text: n.name + ' ' + (n.tags || []).join(' ') + ' ' + (n.summary || ''),
-  }));
-  D.events.forEach(ev => searchIndex.push({
-    kind: 'event', name: ev.id, title: ev.title || ev.label, meta: ev.year + ' 年' + (ev.month ? ev.month + ' 月' : ''),
-    text: (ev.title || '') + ' ' + ev.label + ' ' + (ev.blurb || ''),
-  }));
+  /* ---------------- 全局搜索(随来源模式重建) ---------------- */
+  let searchIndex = [];
+  function buildSearchIndex() {
+    searchIndex = [];
+    D.entities.forEach(e => {                 // 词条卡恒可搜(不按来源拆分)
+      searchIndex.push({
+        kind: 'entity', name: e.name, type: e.type, meta: typeMeta(e.type).label + (e.birth ? ' · ' + e.birth + (e.death ? '—' + e.death : '') : ''),
+        text: e.name + ' ' + (e.tags || []).join(' ') + ' ' + (e.summary || ''),
+      });
+    });
+    D.notes.forEach(n => searchIndex.push({
+      kind: 'note', name: n.name, type: 'note', meta: '分期笔记',
+      text: n.name + ' ' + (n.tags || []).join(' ') + ' ' + (n.summary || ''),
+    }));
+    D.events.forEach(ev => {
+      if (!eventVisible(ev)) return;
+      const srcTag = ev.src === 'hong' ? ' · 洪年表' : ev.src === 'curated' ? ' · 策展' : '';
+      searchIndex.push({
+        kind: 'event', name: ev.id, title: ev.title || ev.label, meta: ev.year + ' 年' + (ev.month ? ev.month + ' 月' : '') + srcTag,
+        text: (ev.title || '') + ' ' + ev.label + ' ' + (ev.blurb || ''),
+      });
+    });
+  }
+  buildSearchIndex();
 
   const searchPop = $('#search-pop');
   const searchInput = $('#search-input');
@@ -316,8 +507,59 @@
     }
   });
 
+  /* ---------------- 来源切换控件(顶栏) ---------------- */
+  function buildSourceSwitch() {
+    const bar = document.createElement('div');
+    bar.id = 'src-switch';
+    bar.innerHTML = SRC_MODES.map(m => {
+      const dot = (m.id === 'hong' || m.id === 'zhu')
+        ? `<span class="sdot" style="background:${cssVar(srcMeta(m.id).color)}"></span>` : '';
+      return `<button data-src="${m.id}" title="${esc(m.title || m.label)}">${dot}${esc(m.label)}</button>`;
+    }).join('');
+    const spacer = document.querySelector('#topbar .spacer');
+    if (spacer && spacer.parentNode) spacer.parentNode.insertBefore(bar, spacer.nextSibling);
+    else document.getElementById('topbar').appendChild(bar);
+    bar.addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (b) setSource(b.dataset.src);
+    });
+    syncSourceSwitch();
+  }
+  function syncSourceSwitch() {
+    document.querySelectorAll('#src-switch button').forEach(b =>
+      b.classList.toggle('active', b.dataset.src === srcMode()));
+  }
+  function setSource(m, opts = {}) {
+    if (!SRC_MODES.some(x => x.id === m)) return;
+    window.APP_STATE.source = m;
+    try { localStorage.setItem(SRC_KEY, m); } catch (_) { /* 忽略 */ }
+    syncSourceSwitch();
+    buildSearchIndex();
+    if (!opts.fromHash) {
+      // 同步 hash(保留视图与其它参数),不触发重复路由
+      const h = /^#\/(\w+)(?:\?(.*))?$/.exec(location.hash);
+      const view = h ? h[1] : 'timeline';
+      const params = new URLSearchParams(h && h[2] ? h[2] : '');
+      params.set('src', m);
+      history.replaceState(null, '', '#/' + view + '?' + params.toString());
+    }
+    document.getElementById('drawer').classList.remove('open');
+    for (const mod of Object.values(window.Views || {}))
+      if (mod.onSourceChange) mod.onSourceChange();
+    if (!opts.silent) toast(SRC_TOAST[m] || m, 2200);
+  }
+  window.setSource = setSource;
+  window.cycleSource = () => {
+    const i = SRC_MODES.findIndex(x => x.id === srcMode());
+    setSource(SRC_MODES[(i + 1) % SRC_MODES.length].id);
+  };
+
   /* ---------------- 启动 ---------------- */
   marked.setOptions({ breaks: true });
+  buildSourceSwitch();
+  // 墨条初始定位（字体就绪后宽度可能变化，补一次）
+  moveTabInk(false);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => moveTabInk(false));
   // 首次路由推迟到 load：确保所有视图模块（后加载的 timeline/graph/map）已注册
   window.addEventListener('load', routeFromHash);
   window.addEventListener('DOMContentLoaded', routeFromHash);

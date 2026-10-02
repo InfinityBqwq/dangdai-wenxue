@@ -17,6 +17,7 @@
     { key: 'org', label: '组织 · 机构', color: CFG.types.org.color },
   ];
 
+  /* 词条卡恒全量(不按编年口径拆分);分期笔记/综述亦恒显示 */
   function collect() {
     const map = new Map(GROUPS.map(g => [g.key, []]));
     D.notes.forEach(n => map.get('note').push(n));
@@ -26,6 +27,7 @@
   }
 
   let byName = new Map();
+  let currentName = '';
   function buildTree() {
     const data = collect();
     byName = new Map();
@@ -42,9 +44,8 @@
           <span><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${g.color};margin-right:7px;opacity:.8"></span>${g.label}</span>
           <span><span class="count">${items.length}</span> <span class="arrow">▶</span></span>
         </div>
-        <div class="wt-items">${items.map(it =>
-          `<button class="wt-item" data-name="${it.name.replace(/"/g, '&quot;')}">${it.name}</button>`).join('')}
-        </div>`;
+        <div class="wt-items"><div class="wt-inner">${items.map(it =>
+          `<button class="wt-item" data-name="${it.name.replace(/"/g, '&quot;')}">${it.name}</button>`).join('')}</div></div>`;
       wrap.querySelector('.wt-ghead').addEventListener('click', () => wrap.classList.toggle('open'));
       wrap.querySelectorAll('.wt-item').forEach(btn =>
         btn.addEventListener('click', () => show(btn.dataset.name)));
@@ -70,6 +71,7 @@
   function show(name) {
     const item = byName.get(name);
     if (!item) return;
+    currentName = name;
     const box = document.getElementById('wiki-content');
     // 树高亮
     document.querySelectorAll('.wt-item').forEach(b =>
@@ -83,6 +85,7 @@
       ${badges(item)}
       ${sub.length ? `<p style="color:var(--ink-3);font-size:13px;margin-top:10px">${sub.join(' · ')}</p>` : ''}
       <div style="margin-top:18px" class="wiki-article">${window.renderWikiStripped(window.stripTitleHeading(item.body || '（占位卡片：知识库中尚无正文。可从图谱/时间轴查看其关联。）', item.name))}</div>
+      ${window.compareBlockHtml ? window.compareBlockHtml(item) : ''}
       <hr style="margin-top:36px">
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px" id="wiki-actions">
         ${window.crossActionsForWiki ? window.crossActionsForWiki(item) : ''}
@@ -96,6 +99,12 @@
       else if (act === 'timeline') window.switchView('timeline', { focus: item.birth || item.from || '' });
       else if (act === 'obsidian') window.open(btn.dataset.uri, '_blank');
     });
+    // 正文换装淡入
+    if (!(window.prefersReducedMotion && window.prefersReducedMotion())) {
+      box.classList.remove('in');
+      void box.offsetWidth;
+      box.classList.add('in');
+    }
     document.getElementById('wiki-main').scrollTop = 0;
   }
   window.wikiShow = show;
@@ -106,7 +115,7 @@
       const box = document.getElementById('wiki-content');
       box.innerHTML = `<h1 style="border:none;font-size:22px;color:var(--ink-3)">选择左侧任意卡片开始阅读</h1>
         <p style="color:var(--ink-3)">全库共 ${D.entities.length} 张知识卡片 + ${D.notes.length} 篇分期笔记与综述。<br>
-        卡片正文中的 <span style="color:var(--cinnabar)">朱红双链</span> 可直接点击跳转。</p>`;
+        卡片正文中并排两书说法;编年口径由顶栏切换。</p>`;
     },
     onShow(params) {
       if (params && params.name) show(params.name);

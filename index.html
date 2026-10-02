@@ -110,7 +110,12 @@
 <script>
 // 卷轴开幕
 window.addEventListener('load', () => {
-  setTimeout(() => document.getElementById('curtain').classList.add('gone'), 900);
+  setTimeout(() => {
+    document.getElementById('curtain').classList.add('gone');
+    // 供时间轴首次显影仪式对齐：卷轴正在拉开
+    window.__curtainOpening = true;
+    setTimeout(() => { window.__curtainOpening = false; }, 1900);
+  }, 900);
   setTimeout(() => document.getElementById('curtain').remove(), 2800);
 });
 </script>

@@ -22,6 +22,7 @@
   const GROUPS = [
     ['全局', [
       ['1 2 3 4', '切换 时间轴 / Wiki / 图谱 / 地图'],
+      ['S', '切换编年 朱栋霖 / 洪子诚 / 双轨比对'],
       ['Ctrl K 或 /', '全局搜索'],
       ['Esc', '逐层关闭（帮助 → 浮层 → 抽屉）'],
       ['?', '本帮助'],
@@ -155,6 +156,11 @@
       const v = ['timeline', 'wiki', 'graph', 'map'][+e.key - 1];
       window.switchView(v);
       e.preventDefault(); return;
+    }
+    // 来源切换(S)
+    if (e.key === 's' || e.key === 'S') {
+      if (window.cycleSource) { window.cycleSource(); e.preventDefault(); }
+      return;
     }
 
     const view = window.getView ? window.getView() : 'timeline';
