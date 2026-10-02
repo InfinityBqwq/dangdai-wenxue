@@ -37,7 +37,7 @@
 
 - `tools/serve.mjs` 无缓存头：改 JS 后浏览器可能用旧脚本，需强制刷新。
 - d3：`.join()` 之后 `.attr('class', …)` 会覆盖选择器依赖的 class（曾致时期题字堆在原点）；forceLink 的边必须用 `source`/`target` 键。
-- ECharts 地图性能：canvas 渲染器显式声明 + `animation:false` + setOption 前先比对可见钉集合签名（集合未变零更新）；播放用 rAF 推进浮点年。
+- ECharts 地图性能与钉过渡：canvas 渲染器显式声明 + setOption 前先比对可见钉集合签名（集合未变零更新）；集合变化时开动画——新钉 enter / 离场钉 leave 是 echarts 散点内建行为，但**数据项必须带稳定 id**（无 id 按索引 diff，会淡出错钉），leave 时长 200ms 为库内写死、enter 走 `animationDuration`；flyGeo 逐帧 setOption 须显式 `animation:false` 防继承合并态动画；播放用 rAF 推进浮点年。
 - `KeyboardEvent.target` 可能是 `document`（无 `.matches`），判输入焦点需 `target instanceof Element` 防护。
 - 测试时序假象：rAF 异步渲染后须等两帧再读 transform；非激活视图（display:none）下子元素尺寸全为 0×0，勿据此断言 bug。
 - ZCode 会话中断会杀掉后台 node 服务器，恢复时重启 `node tools/serve.mjs 8080` 并重开浏览器标签。
