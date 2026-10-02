@@ -334,17 +334,19 @@ function matchMilestones(list, srcTag, opts = {}) {
     c.priority = 2; c.kind = kindOfChron(c.text); c.src = srcTag;
     for (const ms of milestones) {
       if (used.has(ms.title)) continue;                // 每个里程碑只标注最早命中的条目
-      if (opts.eligible && !opts.eligible.has(ms.title)) continue;
       if (ms.year !== c.year) continue;
       // 洪年表常用"同月/本年"纪时,月份约束仅用于朱侧(月份精确)
       if (!opts.ignoreMonth && ms.month && ms.month !== c.month) continue;
       const hay = c.text;
-      const allHit = !ms.match || ms.match.every(k => hay.includes(k));
-      const anyHit = ms.matchAny && ms.matchAny.some(k => hay.includes(k));
-      const hit = (ms.match || ms.matchAny) ? (allHit || anyHit) : false;
+      // allHit 仅在有 match 时成立(matchAny 专属里程碑不得因 match 缺省而恒真,
+      // 否则会错锚到当年第一条条目)
+      const allHit = ms.match ? ms.match.every(k => hay.includes(k)) : false;
+      const anyHit = ms.matchAny ? ms.matchAny.some(k => hay.includes(k)) : false;
+      const hit = allHit || anyHit;
       if (hit) {
         c.priority = 1; c.title = ms.title; c.blurb = ms.blurb || '';
         c.kind = ms.type || 'event'; c.milestone = true;
+        c.msTitle = ms.title;          // 配对键:两套编年命中同一里程碑 ⇔ msTitle 相同
         used.add(ms.title);
         break;
       }
@@ -359,7 +361,7 @@ for (const ms of milestones) {
   chronicle.push({ id: 'ms-' + ms.title, year: ms.year, month: ms.month || '', day: '',
     text: ms.blurb || ms.title, label: ms.title, title: ms.title, blurb: ms.blurb || '',
     kind: ms.type || 'event', priority: 1, milestone: true, refs: [], standalone: true,
-    src: 'curated', hongMatched: usedHong.has(ms.title) });
+    src: 'curated', msTitle: ms.title, hongMatched: usedHong.has(ms.title) });
 }
 
 // 5.4 主次/类型覆盖
@@ -368,21 +370,8 @@ for (const [name, ov] of Object.entries(curated.overrides || {})) {
   if (t) Object.assign(t, ov);
 }
 
-/* 5.4b 洪系事件/政策/群体的时间锚点:
-   这些实体卡没有 workYear(年份正则只识别作品动词),但它们的名字
-   都出现在洪子诚年表里——取年表首现条目作为该实体在洪本编年中的
-   起点纪年(hongYear/hongMonth),供时间轴在洪模式/比对模式渲染锚点。 */
-for (const e of entities) {
-  if (!(e.src || []).includes('hong')) continue;
-  if (!['event', 'policy', 'movement', 'org'].includes(e.type)) continue;
-  const name = String(e.name || '');
-  if (name.length < 2) continue;
-  let first = null;
-  for (const c of hongChronicle) {
-    if (c.text.includes(name)) { first = c; break; }
-  }
-  if (first) { e.hongYear = first.year; e.hongMonth = first.month || ''; }
-}
+/* 5.4b(已移除): 曾为洪系实体计算 hongYear 年表首现锚点,前端无消费者,删除。
+   若将来要在洪/比对模式渲染实体锚点,从 git 历史找回此块。 */
 
 /* ---------------- 5c. 两书正文口径挖掘(cmp) ----------------
    对每个实体统计它在两部教材正文中的提及:次数、出现于哪些章·节、
@@ -601,8 +590,10 @@ console.log(`人物有生卒年: ${withLife} / ${withLife + noLife}`);
 console.log(`实体来源: 仅洪 ${bySrcCount.hong} / 仅朱 ${bySrcCount.zhu} / 两书均引 ${bySrcCount.both} / 无教材出处 ${bySrcCount.none}`);
 console.log(`编年事件: 朱栋霖大事记 ${DATA.stats.eventsBySrc.zhu} / 洪子诚年表 ${DATA.stats.eventsBySrc.hong} / 策展里程碑 ${DATA.stats.eventsBySrc.curated}`);
 console.log(`口径挖掘(cmp): ${DATA.stats.cmpMined}/${entities.length} 实体至少被一书提及`);
-console.log(`里程碑命中: ${milestones.filter(m => usedMilestone.has(m.title)).length}/${milestones.length}（未命中者作为独立条目加入）`);
-console.log(`洪侧里程碑命中: ${hongChronicle.filter(c => c.milestone).length}（仅匹配朱侧已命中的里程碑,另含 7 张策展独立卡）`);
+console.log(`里程碑命中: ${usedMilestone.size}/${milestones.length}（未命中者作为独立条目加入）`);
+const hongMs = hongChronicle.filter(c => c.milestone);
+const hongPaired = hongMs.filter(c => usedMilestone.has(c.msTitle)).length;
+console.log(`洪侧里程碑命中: ${hongMs.length}（其中与朱侧同题配对 ${hongPaired} 个;策展独立卡 ${milestones.length - usedMilestone.size} 张）`);
 console.log(`未命中里程碑: ${milestones.filter(m => !usedMilestone.has(m.title)).map(m => m.title + '(' + m.year + ')').join('、') || '无'}`);
 console.log(`未解析链接目标(前20): ${[...missingLinkTargets].slice(0, 20).join('、')}`);
 console.log(`输出体积: ${(fs.statSync(OUT_FILE).size / 1024 / 1024).toFixed(2)} MB`);

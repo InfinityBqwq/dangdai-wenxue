@@ -143,10 +143,12 @@
       const btn = e.target.closest('.mp-item');
       if (btn) { openEntry(items[+btn.dataset.i]); closePop(); }
     });
-    // 定位（钉附近，防溢出）
-    const vw = chartDom.clientWidth, vh = chartDom.clientHeight;
-    pop.style.left = Math.min(clientX + 14, vw - 240) + 'px';
-    pop.style.top = Math.min(clientY - 10, vh - items.length * 34 - 70) + 'px';
+    // 定位（钉附近，防溢出）——clientX/Y 是视口坐标，
+    // 浮层是 #view-map 内 absolute 定位，须换算成容器相对坐标
+    const rect = chartDom.getBoundingClientRect();
+    const lx = clientX - rect.left, ly = clientY - rect.top;
+    pop.style.left = Math.max(8, Math.min(lx + 14, rect.width - 250)) + 'px';
+    pop.style.top = Math.max(8, Math.min(ly - 10, rect.height - items.length * 34 - 70)) + 'px';
     setTimeout(() => document.addEventListener('click', closePopOnce, { once: true }));
   }
   function closePopOnce() { closePop(); }

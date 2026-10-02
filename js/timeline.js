@@ -519,6 +519,58 @@
     d3.selectAll('.hong-track').classed('off', !filterState.event);
   }
 
+  /* ---------- 鼠标拖拽状态（模块级单例；window 监听只注册一次，
+         避免每次 build() 重建时重复绑定累积） ---------- */
+  const DRAG = { on: false, x0: 0, y0: 0, pan0: 0, panY0: 0, moved: false,
+                 velX: 0, velY: 0, lastT: 0, prevCX: 0, prevCY: 0 };
+  const MMDRAG = { on: false };   // 缩略导航条拖拽（与主拖拽互斥）
+
+  const sampleVel = (cx, cy, dt, store) => {
+    if (dt >= 4 && dt < 120) {
+      const k = 0.3;
+      store.x = (1 - k) * store.x + k * (cx - store.px) / dt;
+      store.y = (1 - k) * store.y + k * (cy - store.py) / dt;
+      store.t = performance.now();
+    } else if (dt >= 120) {
+      store.x = 0; store.y = 0; store.t = performance.now();
+    }
+    store.px = cx; store.py = cy;
+  };
+  const flickVel = store => {
+    if (performance.now() - store.t > 90) return null;
+    const sp = Math.hypot(store.x, store.y);
+    if (sp < 0.12) return null;
+    const cap = Math.min(2.6, sp) / sp;      // 限幅，防过猛
+    return [store.x * cap, store.y * cap];
+  };
+
+  window.addEventListener('mousemove', e => {
+    if (DRAG.on) {
+      const dx = e.clientX - DRAG.x0, dy = e.clientY - DRAG.y0;
+      if (Math.abs(dx) + Math.abs(dy) > 3) DRAG.moved = true;
+      state.pan = clampPan(DRAG.pan0 - dx / state.zoom);
+      state.panY = clampPanY(DRAG.panY0 - dy / state.zoom);
+      const dt = performance.now() - DRAG.lastT;
+      if (dt > 0) {
+        DRAG.velX = 0.7 * DRAG.velX + 0.3 * (e.clientX - DRAG.prevCX) / dt;
+        DRAG.velY = 0.7 * DRAG.velY + 0.3 * (e.clientY - DRAG.prevCY) / dt;
+      }
+      DRAG.lastT = performance.now(); DRAG.prevCX = e.clientX; DRAG.prevCY = e.clientY;
+      requestRender();
+    } else if (MMDRAG.on) {
+      mmPanToClient(e.clientX);
+    }
+  });
+  window.addEventListener('mouseup', () => {
+    if (DRAG.on) {
+      DRAG.on = false;
+      document.getElementById('view-timeline').classList.remove('dragging');
+      const f = flickVel({ x: DRAG.velX, y: DRAG.velY, px: DRAG.prevCX, py: DRAG.prevCY, t: DRAG.lastT });
+      if (f) startInertia(f[0], f[1]);
+    }
+    MMDRAG.on = false;
+  });
+
   function bindInteractions() {
     const tlView = document.getElementById('view-timeline');
 
@@ -538,54 +590,14 @@
     };
 
     // 拖拽 = 平移（横向 + 纵向），松手带惯性
-    let dragging = false, dragX = 0, dragY = 0, pan0 = 0, panY0 = 0, moved = false;
-    let velX = 0, velY = 0, lastMoveT = 0, prevCX = 0, prevCY = 0;
-    const sampleVel = (cx, cy, dt, store) => {
-      if (dt >= 4 && dt < 120) {
-        const k = 0.3;
-        store.x = (1 - k) * store.x + k * (cx - store.px) / dt;
-        store.y = (1 - k) * store.y + k * (cy - store.py) / dt;
-        store.t = performance.now();
-      } else if (dt >= 120) {
-        store.x = 0; store.y = 0; store.t = performance.now();
-      }
-      store.px = cx; store.py = cy;
-    };
-    const flickVel = store => {
-      if (performance.now() - store.t > 90) return null;
-      const sp = Math.hypot(store.x, store.y);
-      if (sp < 0.12) return null;
-      const cap = Math.min(2.6, sp) / sp;      // 限幅，防过猛
-      return [store.x * cap, store.y * cap];
-    };
     tlView.onmousedown = e => {
       if (e.target.closest('#tl-filters') || e.target.closest('#tl-minimap')) return;
       stopInertia(); cancelTween();
-      dragging = true; moved = false;
-      dragX = prevCX = e.clientX; dragY = prevCY = e.clientY;
-      pan0 = state.pan; panY0 = state.panY;
-      velX = 0; velY = 0; lastMoveT = performance.now();
+      Object.assign(DRAG, { on: true, moved: false, x0: e.clientX, y0: e.clientY,
+        pan0: state.pan, panY0: state.panY, velX: 0, velY: 0,
+        lastT: performance.now(), prevCX: e.clientX, prevCY: e.clientY });
       tlView.classList.add('dragging');
     };
-    window.addEventListener('mousemove', e => {
-      if (!dragging) return;
-      const dx = e.clientX - dragX, dy = e.clientY - dragY;
-      if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
-      state.pan = clampPan(pan0 - dx / state.zoom);
-      state.panY = clampPanY(panY0 - dy / state.zoom);
-      const dt = performance.now() - lastMoveT;
-      if (dt > 0) { velX = 0.7 * velX + 0.3 * (e.clientX - prevCX) / dt; velY = 0.7 * velY + 0.3 * (e.clientY - prevCY) / dt; }
-      lastMoveT = performance.now(); prevCX = e.clientX; prevCY = e.clientY;
-      requestRender();
-    });
-    window.addEventListener('mouseup', () => {
-      if (!dragging) return;
-      dragging = false;
-      tlView.classList.remove('dragging');
-      const v = { x: velX, y: velY, px: prevCX, py: prevCY, t: lastMoveT };
-      const f = flickVel(v);
-      if (f) startInertia(f[0], f[1]);
-    });
 
     // 触摸平移 + 双指缩放（单指松手带惯性）
     let tPrev = null;
@@ -622,10 +634,9 @@
     };
 
     // 点击 → 详情抽屉
-    majorSel.on('click', (e, d) => { if (!moved) window.openDrawerEvent(d); });
-    minorSel.on('click', (e, d) => { if (!moved) window.openDrawerEvent(d); });
-    gContent.selectAll('.hong-dot').on('click', (e, d) => { if (!moved) window.openDrawerEvent(d); });
-    bandSel.on('click', (e, d) => { if (!moved) window.openWikiPage(d.name); });
+    majorSel.on('click', (e, d) => { if (!DRAG.moved) window.openDrawerEvent(d); });
+    minorSel.on('click', (e, d) => { if (!DRAG.moved) window.openDrawerEvent(d); });
+    bandSel.on('click', (e, d) => { if (!DRAG.moved) window.openWikiPage(d.name); });
   }
 
   /* ================= 图例·图层面板 ================= */
@@ -722,20 +733,19 @@
       .attr('fill', 'var(--ink-1)')
       .style('cursor', 'grab');
 
-    const wrapEl = wrap;
-    let mmDrag = false;
-    const panToClient = clientX => {
-      const r = wrapEl.getBoundingClientRect();
-      const frac = (clientX - r.left) / r.width;
-      const docTarget = frac * stripW;
-      state.pan = clampPan(docTarget - (W / 2) / state.zoom);
-      requestRender();
-    };
-    wrapEl.onmousedown = e => { mmDrag = true; panToClient(e.clientX); };
-    window.addEventListener('mousemove', e => { if (mmDrag) panToClient(e.clientX); });
-    window.addEventListener('mouseup', () => mmDrag = false);
+    wrap.onmousedown = e => { MMDRAG.on = true; mmPanToClient(e.clientX); };
 
     renderMinimap();   // 建完立即定位（build() 的渲染发生在此之前）
+  }
+
+  /* 缩略导航条：点击/拖拽位置 → 长卷平移（供全局 mousemove 与条内 mousedown 共用） */
+  function mmPanToClient(clientX) {
+    const wrapEl = document.getElementById('tl-minimap');
+    if (!wrapEl) return;
+    const r = wrapEl.getBoundingClientRect();
+    const frac = (clientX - r.left) / r.width;
+    state.pan = clampPan(frac * stripW - (W / 2) / state.zoom);
+    requestRender();
   }
 
   function renderMinimap() {
@@ -911,7 +921,12 @@
       prepareData();       // 以当前来源模式(可能来自深链/本地存储)重排
       onResize();          // 含 build() 与 buildMinimap()
       buildFilters();
-      window.addEventListener('resize', onResize);
+      // 拖动窗口边框时 resize 连发几十次，防抖后再做全量重建（单次约 70ms）
+      let resizeTimer = null;
+      window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(onResize, 150);
+      });
       maybePlayIntro();    // 首次显影仪式（与卷轴开幕对齐，仅此一次）
     },
     onShow(params) {

@@ -219,12 +219,21 @@
   }
   window.compareBlockHtml = compareBlockHtml;
 
-  /* 来源徽章:该卡片的引用出处(洪/朱) */
+  /* 来源徽章:该卡片的引用出处(洪/朱);无笔记出处时回退用两书正文提及(cmp),
+     标作"提及 n 处"以示口径不同(浩然等卡两书都在讲但无章节笔记出处) */
   function srcBadgesHtml(e) {
-    return (e.src || []).map(b => {
-      const meta = srcMeta(b);
-      return badge('● ' + meta.label, meta.color.startsWith('var') ? cssVar(meta.color) : meta.color);
-    }).join('');
+    const s = e.src || [];
+    if (s.length) {
+      return s.map(b => {
+        const meta = srcMeta(b);
+        return badge('● ' + meta.label, meta.color.startsWith('var') ? cssVar(meta.color) : meta.color);
+      }).join('');
+    }
+    const c = e.cmp || {};
+    let out = '';
+    if (c.hong && c.hong.n) out += badge(`● 洪书提及 ${c.hong.n} 处`, cssVar('--src-hong'));
+    if (c.zhu && c.zhu.n) out += badge(`● 朱书提及 ${c.zhu.n} 处`, cssVar('--src-zhu'));
+    return out;
   }
   const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   function srcRefsLine(e) {
@@ -260,26 +269,40 @@
     const meta = srcMeta(ev.src === 'zhu' ? 'zhu' : ev.src === 'hong' ? 'hong' : 'curated');
     return badge('● ' + label, cssVar(meta.color) || '#8a8272');
   }
+  /* 另一史年表交叉引用:优先用构建期的里程碑配对（msTitle 相同 ⇔ 两书各命中一条），
+     未配对时退化到同年 [[双链]]/《作品》词元重合；策展独立卡对照其洪侧同题条目 */
   function crossChronicle(ev) {
-    if (!ev.src || ev.src === 'curated') return '';
-    const other = ev.src === 'hong' ? 'zhu' : 'hong';
-    const cands = D.events.filter(x => x.src === other && x.year === ev.year && x.id !== ev.id);
-    if (!cands.length) return '';
-    const tokens = t => {
-      const s = new Set();
-      for (const m of String(t).matchAll(/\[\[([^\]|]+)/g)) s.add(m[1].trim());
-      for (const m of String(t).matchAll(/《([^》]+)》/g)) s.add(m[1]);
-      return s;
-    };
-    const a = tokens(ev.text);
-    const scored = cands.map(c => {
-      const b = tokens(c.text);
-      let sc = 0;
-      for (const t of a) if (b.has(t)) sc++;
-      return { c, sc };
-    }).sort((x, y) => y.sc - x.sc).filter(x => x.sc > 0).slice(0, 2);
-    if (!scored.length) return '';
-    return `<h3>另一史对照 · ${esc(EVENT_SRC[other])}</h3><p>${scored.map(({ c }) =>
+    if (!ev.src) return '';
+    let entries = [];
+    let srcLabel = '';
+    if (ev.src === 'curated') {
+      if (ev.hongMatched) {
+        entries = D.events.filter(x => x.src === 'hong' && x.msTitle === ev.title);
+        srcLabel = EVENT_SRC.hong;
+      }
+    } else {
+      const other = ev.src === 'hong' ? 'zhu' : 'hong';
+      srcLabel = EVENT_SRC[other];
+      entries = D.events.filter(x => x.src === other && x.msTitle && x.msTitle === ev.msTitle && x.id !== ev.id);
+      if (!entries.length) {
+        const cands = D.events.filter(x => x.src === other && x.year === ev.year && x.id !== ev.id);
+        const tokens = t => {
+          const s = new Set();
+          for (const m of String(t).matchAll(/\[\[([^\]|]+)/g)) s.add(m[1].trim());
+          for (const m of String(t).matchAll(/《([^》]+)》/g)) s.add(m[1]);
+          return s;
+        };
+        const a = tokens(ev.text);
+        entries = cands.map(c => {
+          const b = tokens(c.text);
+          let sc = 0;
+          for (const t of a) if (b.has(t)) sc++;
+          return { c, sc };
+        }).sort((x, y) => y.sc - x.sc).filter(x => x.sc > 0).slice(0, 2).map(x => x.c);
+      }
+    }
+    if (!entries.length) return '';
+    return `<h3>另一史对照 · ${esc(srcLabel)}</h3><p>${entries.slice(0, 2).map(c =>
       `<span class="wikilink" style="color:var(--cinnabar)" data-cross="${esc(c.id)}">${esc(c.year + '年' + (c.month ? c.month + '月' : '') + ' · ' + (c.title || c.label).slice(0, 32))}</span>`
     ).join('<br>')}</p>`;
   }
@@ -307,9 +330,16 @@
     }
     html += crossChronicle(ev);
     $('#drawer-body').innerHTML = html;
+    const evName = ev.title || ev.label;
+    // 编年事件的原文件:洪=第二十七章书后年表 · 朱=大事记附录;策展独立卡无原文件
+    const obsFile = ev.src === 'hong' ? '原文/中国当代文学史-洪子诚/27_第二十七章_90年代的小说'
+      : ev.src === 'zhu' ? '原文/中国现代文学史1915-2018/中国当代文学大事记（1949—2018）' : '';
+    const obsidianUri = `obsidian://open?vault=${CFG.obsidianVault}&file=${encodeURIComponent(obsFile)}`;
     $('#drawer-actions').innerHTML = `
       <button data-act="timeline-focus" data-year="${ev.year}">⇲ 时间轴定位 ${ev.year}</button>
-      ${crossActions(ev.title || ev.label, 'event').replace('📖 Wiki 阅读', '🔍 搜索同名卡片')}`;
+      <button data-act="search-name" data-name="${esc(evName)}">🔍 搜索相关卡片</button>
+      <button data-act="graph" data-name="${esc(evName)}">🕸 图谱查看</button>
+      ${obsFile ? `<button data-act="obsidian" data-uri="${esc(obsidianUri)}">✎ Obsidian 打开</button>` : ''}`;
     swapDrawer();
     drawer.classList.add('open');
   }
@@ -337,6 +367,15 @@
     const act = btn.dataset.act;
     const name = btn.dataset.name;
     if (act === 'wiki') { drawer.classList.remove('open'); switchView('wiki', { name }); }
+    else if (act === 'search-name') {          // 打开全局搜索并预填词条名
+      drawer.classList.remove('open');
+      // 延迟到本轮 click 冒泡结束后,避免被全局"点击搜索框外即关闭"处理器顶掉
+      setTimeout(() => {
+        const si = document.getElementById('search-input');
+        si.focus(); si.value = name;
+        si.dispatchEvent(new Event('input', { bubbles: true }));
+      }, 0);
+    }
     else if (act === 'graph') { switchView('graph', { node: name }); }
     else if (act === 'locate') { switchView('map', { person: name }); }
     else if (act === 'timeline-focus') { switchView('timeline', { focus: +btn.dataset.year }); }

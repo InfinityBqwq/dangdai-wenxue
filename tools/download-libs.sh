@@ -35,10 +35,6 @@ dl china-geojson.js \
   "https://geo.datav.aliyun.com/areas_v3/bound/100000_full.json" \
   "https://raw.githubusercontent.com/echarts-maps/echarts-china-provinces-js/master/china.json"
 
-# 中国地图备用源（省级简化版，文件更小）
-dl china-geojson-alt.json \
-  "https://geo.datav.aliyun.com/areas_v3/bound/100000.json" || true
-
 # 霞鹜文楷字体（约 19MB，多源尝试）
 mkdir -p fonts
 dl fonts/LXGWWenKai-Regular.ttf \

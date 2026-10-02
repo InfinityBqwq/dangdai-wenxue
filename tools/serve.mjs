@@ -20,7 +20,11 @@ http.createServer((req, res) => {
   if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
     res.writeHead(404).end('Not Found'); return;
   }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
+  // no-store:本地开发服务器,避免改代码后浏览器沿用旧脚本
+  res.writeHead(200, {
+    'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
+    'Cache-Control': 'no-store',
+  });
   fs.createReadStream(file).pipe(res);
 }).listen(PORT, () => {
   console.log(`✦ 中国当代文学史数字长卷 → http://localhost:${PORT}`);

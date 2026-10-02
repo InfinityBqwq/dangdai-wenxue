@@ -14,7 +14,6 @@
   const nodes = [];          // {id,name,type,deg,x,y,imp}
   const nodeById = new Map();
   const links = [];          // {s:node, t:node}
-  const deg = new Map();
 
   const typeByKey = new Map();
   const entityByName = new Map(D.entities.map(e => [e.name, e]));
@@ -28,7 +27,9 @@
     const e = entityByName.get(name);
     if (e) {
       if (e.placeholder) n.placeholder = true;
-      n.src = e.src || [];
+      // 比对模式外环:卡片出处优先;无笔记出处时回退用两书正文提及(cmp)
+      n.src = (e.src && e.src.length) ? e.src
+        : (e.cmp ? ['hong', 'zhu'].filter(b => e.cmp[b] && e.cmp[b].n) : []);
     }
     nodes.push(n); nodeById.set(name, n);
     return n;
@@ -38,7 +39,6 @@
     s.deg++; t.deg++;
     links.push({ source: s, target: t });
   });
-  nodes.forEach(n => { if (!deg.has(n.id)) deg.set(n.id, 0); });
 
   // 节点数过多时：只保留连接数 >= 2 或 重要/占位节点？773 全量可以
   const RADIUS = n => Math.min(4 + Math.sqrt(n.deg) * 1.6, 16) * (n.imp ? 1.15 : 1);
