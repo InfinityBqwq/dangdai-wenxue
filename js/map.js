@@ -3,9 +3,11 @@
    ------------------------------------------------------------
    · 单词条钉：单击直接右侧抽屉展示详情
    · 多词条钉：单击弹出名录浮层，点名录中任一条再开抽屉
-   · 性能：canvas 渲染器（GPU 合成）+ animation 关闭；
-     只有"可见钉集合"变化时才 setOption，滑杆/播放期间
-     其余帧零 ECharts 开销 → 播放连续流畅
+   · 性能：canvas 渲染器（GPU 合成）；只有"可见钉集合"变化时
+     才 setOption，滑杆/播放期间其余帧零 ECharts 开销 → 播放连续流畅
+   · 过渡：集合变化时新钉放大淡入、离场钉收缩淡出——echarts 散点
+     对 add/remove 自带 enter/leave 动画，前提是数据项带稳定 id
+     （无 id 时按索引 diff，淡出的会是错误的钉）
    · 播放：requestAnimationFrame 连续推进年份（浮点年），
      每秒 2 年，钉在其实际活动年份边界出现/消失
    ============================================================ */
@@ -39,12 +41,13 @@
       byPos.get(k).items.push(l);
     }
     const out = { person: [], group: [], work: [] };
-    for (const g of byPos.values()) {
+    for (const [k, g] of byPos) {
       const byType = { person: [], group: [], work: [] };
       g.items.forEach(l => (byType[l.t] || byType.group).push(l));
       for (const [t, arr] of Object.entries(byType)) {
         if (!arr.length) continue;
         out[t].push({
+          id: t + ':' + k,             // 稳定 id：diff 按身份匹配 → 退场淡出的是"这颗"钉
           name: arr[0].city,
           value: [g.x, g.y, arr.length],
           items: arr,
@@ -59,10 +62,10 @@
   const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
   /* ---------- 年份推进（核心：只在集合变化时才动 ECharts） ----------
-     animate=true 时给钉子一次出现/平移短过渡——仅限离散跳年
-     （键盘步进/人物定位）；播放与滑杆拖动保持硬切（性能红线）。 */
-  let lastAnimT = 0;
-  function setYear(y, force, animate) {
+     集合变化时开启短过渡：新钉 enter（放大淡入）、离场钉 leave
+     （收缩淡出）、已有钉 update（尺寸/位置微调）。播放与滑杆与
+     键盘步进共用同一套过渡；reduced-motion 时硬切。 */
+  function setYear(y, force) {
     year = Math.max(YMIN, Math.min(YMAX, y));
     const list = locsAt(year);
     const key = visibleKey(list);
@@ -71,14 +74,13 @@
     if (Math.abs(+slider.value - year) > 0.02) slider.value = year;
     if (!force && key === lastKey) return;      // 可见集合未变 → 跳过 setOption
     lastKey = key;
-    let doAnim = !!animate && !(window.prefersReducedMotion && window.prefersReducedMotion());
-    const now = performance.now();
-    if (doAnim && now - lastAnimT < 140) doAnim = false;   // 连发跳年退化为硬切
-    if (doAnim) lastAnimT = now;
+    const anim = !(window.prefersReducedMotion && window.prefersReducedMotion());
     const data = seriesData(list);
     chart.setOption({
-      animation: doAnim,
-      animationDurationUpdate: 240,
+      animation: anim,
+      animationDuration: 340,         // enter/leave 共用（echarts 两态同读此项）
+      animationEasing: 'cubicOut',
+      animationDurationUpdate: 240,   // 已有钉的 count→尺寸变化等微调
       animationEasingUpdate: 'cubicOut',
       series: [
         { id: 'group', data: data.group },
@@ -228,7 +230,7 @@
   window.MAP = {
     nudge(d) {
       stopPlay();
-      setYear(Math.floor(year) + (d > 0 ? Math.ceil(d) : Math.floor(d)), false, true);
+      setYear(Math.floor(year) + (d > 0 ? Math.ceil(d) : Math.floor(d)), false);
     },
     togglePlay() { playRaf ? stopPlay() : startPlay(); },
     playing: () => !!playRaf,
@@ -241,7 +243,7 @@
   function flyGeo(center, zoom, ms = 700) {
     stopFly();
     if (window.prefersReducedMotion && window.prefersReducedMotion()) {
-      chart.setOption({ geo: { center, zoom } });
+      chart.setOption({ animation: false, geo: { center, zoom } });
       return;
     }
     const g = chart.getOption().geo[0];
@@ -253,6 +255,7 @@
       const t = Math.min(1, (now - t0) / ms);
       const e = easeOut(t);
       chart.setOption({
+        animation: false,             // 飞行自行逐帧插值，勿再叠加 ECharts 过渡
         geo: {
           center: [c0[0] + (center[0] - c0[0]) * e, c0[1] + (center[1] - c0[1]) * e],
           zoom: Math.exp(Math.log(z0) + (Math.log(zoom) - Math.log(z0)) * e),   // 缩放走对数空间
@@ -302,7 +305,7 @@
         const loc = locs.find(l => l.n === params.person);
         if (loc) {
           closePop();
-          setYear(Math.max(YMIN, Math.min(YMAX, loc.from ?? YMIN)), true, true);
+          setYear(Math.max(YMIN, Math.min(YMAX, loc.from ?? YMIN)), true);
           flyGeo([loc.x, loc.y + 3], 6);       // 飞向人物活动地（非播放路径）
         }
       } else {
