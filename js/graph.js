@@ -145,28 +145,55 @@
     raf = requestAnimationFrame(() => { raf = null; draw(); });
   }
 
+  /* ---------- 主题色(缓存;draw 每帧读 getComputedStyle 在布局期
+     260 帧全量重绘下开销可观。换主题时由 MutationObserver 失效) ---------- */
+  let themeCache = null;
+  function themeColors() {
+    if (themeCache) return themeCache;
+    const css = getComputedStyle(document.documentElement);
+    themeCache = {
+      ink3: css.getPropertyValue('--ink-3').trim() || '#8a8272',
+      ink0: css.getPropertyValue('--ink-0').trim() || '#1a1712',
+      paper: css.getPropertyValue('--paper-0').trim() || '#f3ecdc',
+      hong: css.getPropertyValue('--src-hong').trim() || '#bc621c',
+      zhu: css.getPropertyValue('--src-zhu').trim() || '#2a6f77',
+    };
+    return themeCache;
+  }
+  if (window.MutationObserver) {
+    new MutationObserver(() => { themeCache = null; })
+      .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  }
+  const LABEL_FONT = '11px "LXGW WenKai", "KaiTi", serif';
+
   function draw() {
     ctx.clearRect(0, 0, W, H);
     ctx.save();
     ctx.translate(view.x, view.y);
     ctx.scale(view.k, view.k);
 
-    const css = getComputedStyle(document.documentElement);
-    const cInk3 = css.getPropertyValue('--ink-3').trim() || '#8a8272';
-    const cInk0 = css.getPropertyValue('--ink-0').trim() || '#1a1712';
-    const paper = css.getPropertyValue('--paper-0').trim() || '#f3ecdc';
+    const T = themeColors();
+    const cInk3 = T.ink3, cInk0 = T.ink0, paper = T.paper;
+
+    /* 视口裁剪:世界坐标可见包围盒,画布外的边/节点直接跳过
+       (缩放放大时绘制量按可见比例下降) */
+    const cullPad = 40 / view.k;
+    const vx0 = -view.x / view.k - cullPad, vy0 = -view.y / view.k - cullPad;
+    const vx1 = (W - view.x) / view.k + cullPad, vy1 = (H - view.y) / view.k + cullPad;
+    const off = (x, y) => x < vx0 || x > vx1 || y < vy0 || y > vy1;
 
     const dimming = hoverRef && hoverA > 0.01;    // 悬停晕染是否生效
     /* 比对模式:单一来源节点画来源色外环(洪=赭橙,朱=青碧) */
     const srcRing = srcMode() === 'compare';
-    const cHong = css.getPropertyValue('--src-hong').trim() || '#bc621c';
-    const cZhu = css.getPropertyValue('--src-zhu').trim() || '#2a6f77';
 
-    // 边（晕染时：邻居朱红渐显，其余随墨晕隐去）
+    // 边（晕染时：邻居朱红渐显，其余随墨晕隐去；两端均在视口外才跳过）
     for (const l of links) {
       if (!linkVisible(l)) continue;
+      const s = l.source, t = l.target;
+      if ((s.x < vx0 && t.x < vx0) || (s.x > vx1 && t.x > vx1) ||
+          (s.y < vy0 && t.y < vy0) || (s.y > vy1 && t.y > vy1)) continue;
       if (dimming) {
-        const isNeighbor = l.source === hoverRef || l.target === hoverRef;
+        const isNeighbor = s === hoverRef || t === hoverRef;
         if (isNeighbor) {
           ctx.strokeStyle = `rgba(179, 52, 46, ${(0.15 + 0.4 * hoverA).toFixed(3)})`;
           ctx.lineWidth = (1 + 0.4 * hoverA) / view.k;
@@ -180,8 +207,8 @@
         ctx.lineWidth = 1 / view.k;
       }
       ctx.beginPath();
-      ctx.moveTo(l.source.x, l.source.y);
-      ctx.lineTo(l.target.x, l.target.y);
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(t.x, t.y);
       ctx.stroke();
     }
 
@@ -190,6 +217,7 @@
     const labeled = [];
     for (const n of nodes) {
       if (!nodeVisible(n)) continue;
+      if (off(n.x, n.y)) continue;
       let a = 1;
       if (dimming) {
         const isNeighbor = n === hoverRef || adjacency.get(hoverRef.id)?.has(n.id);
@@ -211,7 +239,7 @@
       ctx.fill();
       // 来源外环(比对模式)
       if (srcRing && n.src && n.src.length === 1) {
-        ctx.strokeStyle = n.src[0] === 'hong' ? cHong : cZhu;
+        ctx.strokeStyle = n.src[0] === 'hong' ? T.hong : T.zhu;
         ctx.lineWidth = 1.8 / view.k;
         ctx.beginPath();
         ctx.arc(n.x, n.y, r + 2.8, 0, 6.284);
@@ -231,9 +259,10 @@
     }
 
     // 标签（纸色描边保证可读）
-    ctx.font = '11px "LXGW WenKai", "KaiTi", serif';
+    ctx.font = LABEL_FONT;
     ctx.textAlign = 'center';
     for (const [n, a] of labeled) {
+      if (off(n.x, n.y)) continue;
       const label = n.name.length > 8 ? n.name.slice(0, 7) + '…' : n.name;
       ctx.globalAlpha = Math.min(1, a * 1.6);
       ctx.lineWidth = 3.2 / view.k;
@@ -312,6 +341,61 @@
     }
   });
 
+  /* ---------- 触摸:单指平移 · 双指捏合缩放(锚定中点) · 轻点开卡片 ---------- */
+  let tDrag = null;               // {x, y, moved, t0}
+  let tPinch = null;              // {d0, k0, mx, my, vx0, vy0}
+  canvas.addEventListener('touchstart', e => {
+    if (e.touches.length > 2) return;
+    e.preventDefault();
+    stopFly();
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      tDrag = { x: t.clientX, y: t.clientY, moved: false, t0: performance.now() };
+      tPinch = null;
+    } else {
+      tDrag = null;
+      const [a, b] = e.touches;
+      tPinch = {
+        d0: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
+        mx: (a.clientX + b.clientX) / 2, my: (a.clientY + b.clientY) / 2,
+        vx0: view.x, vy0: view.y, k0: view.k,
+      };
+    }
+  }, { passive: false });
+  canvas.addEventListener('touchmove', e => {
+    if (e.touches.length > 2) return;
+    e.preventDefault();
+    if (tDrag && e.touches.length === 1) {
+      const t = e.touches[0];
+      const dx = t.clientX - tDrag.x, dy = t.clientY - tDrag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 6) tDrag.moved = true;
+      view.x += dx; view.y += dy;
+      tDrag.x = t.clientX; tDrag.y = t.clientY;
+      requestDraw();
+    } else if (tPinch && e.touches.length === 2) {
+      const [a, b] = e.touches;
+      const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      const rect = canvas.getBoundingClientRect();
+      const mx = (a.clientX + b.clientX) / 2 - rect.left, my = (a.clientY + b.clientY) / 2 - rect.top;
+      const k = Math.max(0.12, Math.min(6, tPinch.k0 * d / tPinch.d0));
+      // 初始中点下的世界点,按新 k 投回当前中点(锚定缩放)
+      const wx = (tPinch.mx - tPinch.vx0) / tPinch.k0, wy = (tPinch.my - tPinch.vy0) / tPinch.k0;
+      view.k = k;
+      view.x = mx - wx * k; view.y = my - wy * k;
+      requestDraw();
+    }
+  }, { passive: false });
+  canvas.addEventListener('touchend', e => {
+    // 轻点(短按未拖动)→ 拾取节点开卡片
+    if (tDrag && !tDrag.moved && performance.now() - tDrag.t0 < 350 && e.changedTouches.length === 1) {
+      const t = e.changedTouches[0];
+      const rect = canvas.getBoundingClientRect();
+      const n = pick(t.clientX - rect.left, t.clientY - rect.top);
+      if (n) window.openDrawerEntity(n.name);
+    }
+    tDrag = null; tPinch = null;
+  });
+
   /* ---------- 工具栏 ---------- */
   function buildToolbar() {
     const bar = document.getElementById('graph-toolbar');
@@ -343,6 +427,7 @@
   function buildForcePanel() {
     const box = document.createElement('div');
     box.id = 'graph-forces';
+    if (window.innerWidth <= 640) box.classList.add('collapsed');   // 窄屏默认折叠
     const rows = [
       { k: 'charge', label: '节点排斥力', min: -140, max: -6, step: 2, fmt: v => v.toFixed(0),
         tip: '越大越散开(团块展开)' },
@@ -477,9 +562,20 @@
       // 兜底:视图切回时若盒尺寸又变了(无 ResizeObserver 的环境)先重同步
       const r = canvas.getBoundingClientRect();
       if (Math.abs(r.width - W) > 1 || Math.abs(r.height - H) > 1) onResize();
+      refreshSrcRings();               // 正文补载后 cmp 可用,来源环重推导
       requestDraw();
       if (params && params.node) setTimeout(() => focusNode(params.node), 80);
     },
-    onSourceChange() { requestDraw(); },   // 比对外环显隐随编年口径
+    onSourceChange() { refreshSrcRings(); requestDraw(); },   // 比对外环显隐随编年口径
   };
+
+  /* 来源环重推导:卡片出处优先,无出处回退两书正文提及(cmp 惰性补载后才有) */
+  function refreshSrcRings() {
+    for (const n of nodes) {
+      const e = entityByName.get(n.id);
+      if (!e) continue;
+      n.src = (e.src && e.src.length) ? e.src
+        : (e.cmp ? ['hong', 'zhu'].filter(b => e.cmp[b] && e.cmp[b].n) : []);
+    }
+  }
 })();

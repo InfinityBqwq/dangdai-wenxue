@@ -271,6 +271,44 @@
       `<span style="color:${cssVar(r.book === 'hong' ? '--src-hong' : '--src-zhu')}">◆</span> ${esc(r.label)}`).join('<br>')}</p>`;
   }
 
+  /* ---------------- 正文惰性包(data-body.js) ----------------
+     词条正文与两史口径摘段在独立包里,抽屉/Wiki 首次打开时补载
+     (本地毫秒级;公网首访约几百 KB gzip)。补载结果回填到实体对象,
+     之后再打开即同步渲染。 */
+  let bodyPromise = null;
+  window.ensureBodyData = function () {
+    if (window.DATA_BODY) return Promise.resolve();
+    if (bodyPromise) return bodyPromise;
+    bodyPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'js/data-body.js';
+      s.onload = resolve;
+      s.onerror = () => { bodyPromise = null; reject(new Error('data-body.js 加载失败')); };
+      document.head.appendChild(s);
+    });
+    return bodyPromise;
+  };
+  /* 正文补载后若抽屉仍开着且还是这个词条,按类型重开换装 */
+  function hydrateDrawer(name) {
+    return window.ensureBodyData().then(() => {
+      const full = window.DATA_BODY && window.DATA_BODY[name];
+      const e = entityByName.get(name) || noteByName.get(name);
+      if (full && e) { e.body = full.body; if (full.cmp) e.cmp = full.cmp; }
+      const stillOpen = drawer.classList.contains('open') &&
+        $('#drawer-title').textContent === (e && e.title);
+      if (stillOpen) {
+        if (entityByName.has(name)) openDrawerEntity(name);
+        else if (noteByName.has(name)) openDrawerNote(name);
+      }
+    }).catch(() => { /* 加载失败:抽屉停留在摘要 */ });
+  }
+
+  function renderEntityBody(e) {
+    const body = stripTitleHeading(e.body || e.summary || '（占位卡片，尚未撰写正文）');
+    $('#drawer-body').innerHTML = renderWiki(body) + srcRefsLine(e) + compareBlockHtml(e);
+    $('#drawer-actions').innerHTML = crossActions(e.name);
+  }
+
   function openDrawerEntity(name) {
     const e = entityByName.get(name);
     if (!e) return;
@@ -283,11 +321,17 @@
     if (e.birth) dates.push(e.birth + (e.death ? '—' + e.death : '—'));
     if (e.role) dates.push(e.role);
     $('#drawer-sub').textContent = dates.join(' · ');
-    const body = stripTitleHeading(e.body || e.summary || '（占位卡片，尚未撰写正文）');
-    $('#drawer-body').innerHTML = renderWiki(body) + srcRefsLine(e) + compareBlockHtml(e);
-    $('#drawer-actions').innerHTML = crossActions(e.name);
+    renderEntityBody(e);
     swapDrawer();
     drawer.classList.add('open');
+    if (!e.body) {
+      if (window.DATA_BODY) {         // 包已就绪:该实体可能从未打开过,同步回填
+        const full = window.DATA_BODY[e.name];
+        if (full) { e.body = full.body; if (full.cmp) e.cmp = full.cmp; renderEntityBody(e); }
+      } else {
+        hydrateDrawer(name);          // 包未加载:异步补载后重渲染
+      }
+    }
   }
 
   /* 编年事件来源徽章 + 另一史年表交叉引用 */
@@ -402,10 +446,18 @@
       (n.from ? badge(`${n.from}${n.to ? '—' + n.to : ''}`, CFG.types.other.color) : '');
     $('#drawer-title').textContent = n.title;
     $('#drawer-sub').textContent = '';
-    $('#drawer-body').innerHTML = renderWiki(n.body);
+    $('#drawer-body').innerHTML = renderWiki(n.body || '（正文加载中…）');
     $('#drawer-actions').innerHTML = crossActions(n.name, 'note');
     swapDrawer();
     drawer.classList.add('open');
+    if (!n.body) {
+      if (window.DATA_BODY) {         // 包已就绪:同步回填
+        const full = window.DATA_BODY[n.name];
+        if (full) { n.body = full.body; $('#drawer-body').innerHTML = renderWiki(n.body || '（占位笔记，尚无正文）'); }
+      } else {
+        hydrateDrawer(name);          // 异步补载(hydrateDrawer 会按类型重开)
+      }
+    }
   }
 
   window.openDrawerEntity = openDrawerEntity;
@@ -609,9 +661,11 @@
     const bar = document.createElement('div');
     bar.id = 'src-switch';
     bar.innerHTML = SRC_MODES.map(m => {
+      // 色点即图例:单源=源色,比对=双色对分;文字包 .sst 便于窄屏藏字留点
       const dot = (m.id === 'hong' || m.id === 'zhu')
-        ? `<span class="sdot" style="background:${cssVar(srcMeta(m.id).color)}"></span>` : '';
-      return `<button data-src="${m.id}" title="${esc(m.title || m.label)}">${dot}${esc(m.label)}</button>`;
+        ? `<span class="sdot" style="background:${cssVar(srcMeta(m.id).color)}"></span>`
+        : `<span class="sdot" style="background:linear-gradient(90deg,${cssVar('--src-zhu')} 50%,${cssVar('--src-hong')} 50%)"></span>`;
+      return `<button data-src="${m.id}" title="${esc(m.title || m.label)}">${dot}<span class="sst">${esc(m.label)}</span></button>`;
     }).join('');
     const spacer = document.querySelector('#topbar .spacer');
     if (spacer && spacer.parentNode) spacer.parentNode.insertBefore(bar, spacer.nextSibling);

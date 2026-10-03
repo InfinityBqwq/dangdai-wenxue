@@ -133,15 +133,20 @@
     // 树高亮
     document.querySelectorAll('.wt-item').forEach(b =>
       b.classList.toggle('current', b.dataset.name === name));
+    // 移动端:选中条目后收起滑出目录
+    document.getElementById('wiki-sidebar')?.classList.remove('open');
     const sub = [];
     if (item.birth) sub.push(item.birth + (item.death ? '—' + item.death : '—'));
     if (item.role) sub.push(item.role);
     if (item.era) sub.push(item.era);
+    const bodyHtml = item.body
+      ? window.renderWikiStripped(window.stripTitleHeading(item.body, item.name))
+      : '（正文加载中…）';
     box.innerHTML = `
       <h1>${item.name}</h1>
       ${badges(item)}
       ${sub.length ? `<p style="color:var(--ink-3);font-size:13px;margin-top:10px">${sub.join(' · ')}</p>` : ''}
-      <div style="margin-top:18px" class="wiki-article">${window.renderWikiStripped(window.stripTitleHeading(item.body || '（占位卡片：知识库中尚无正文。可从图谱/时间轴查看其关联。）', item.name))}</div>
+      <div style="margin-top:18px" class="wiki-article">${bodyHtml}</div>
       ${window.compareBlockHtml ? window.compareBlockHtml(item) : ''}
       <div class="wiki-links-bar" id="wiki-actions">
         <span class="wlb-label">关联入口</span>
@@ -163,12 +168,39 @@
       box.classList.add('in');
     }
     document.getElementById('wiki-main').scrollTop = 0;
+    /* 正文/口径摘段在惰性包(data-body.js):包未载则异步补载后重渲染,
+       已载但该条从未打开过则同步回填 */
+    if (!item.body) {
+      if (window.DATA_BODY) {
+        const full = window.DATA_BODY[item.name];
+        if (full) {
+          item.body = full.body;
+          if (full.cmp) item.cmp = full.cmp;
+          if (item.body || item.cmp) { show(item.name); return; }
+        }
+      } else if (window.ensureBodyData) {
+        window.ensureBodyData().then(() => {
+          const full = window.DATA_BODY && window.DATA_BODY[item.name];
+          if (!full || currentName !== item.name) return;
+          item.body = full.body;
+          if (full.cmp) item.cmp = full.cmp;
+          if (item.body || item.cmp) show(item.name);
+        }).catch(() => { /* 保持加载中提示 */ });
+      }
+    }
   }
   window.wikiShow = show;
 
   window.Views.wiki = {
     init() {
       buildTree();
+      // 移动端滑出目录开关;点正文区收起
+      const sb = document.getElementById('wiki-sidebar');
+      document.getElementById('wiki-toc-btn')?.addEventListener('click', e => {
+        e.stopPropagation();
+        sb.classList.toggle('open');
+      });
+      document.getElementById('wiki-main').addEventListener('click', () => sb.classList.remove('open'));
       const box = document.getElementById('wiki-content');
       box.innerHTML = `<h1 style="border:none;font-size:22px;color:var(--ink-3)">选择左侧任意卡片开始阅读</h1>
         <p style="color:var(--ink-3)">全库共 ${D.entities.length} 张知识卡片 + ${D.notes.length} 篇分期笔记与综述,按朱栋霖 / 洪子诚两套教材分期编目(分期骨架取自《原文》章名,章节可跳 Obsidian)。<br>

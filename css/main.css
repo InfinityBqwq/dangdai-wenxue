@@ -13,6 +13,7 @@ html, body {
   font-family: var(--font-body);
   font-size: 15px;
   -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;   /* 拖长卷/地图时不触发浏览器下拉刷新 */
 }
 
 ::selection { background: var(--cinnabar-soft); color: var(--ink-0); }
@@ -457,6 +458,8 @@ a:hover { color: var(--cinnabar-deep); }
 /* ============ WIKI 视图 ============ */
 #view-wiki { display: none; }
 #view-wiki.active { display: flex; }
+/* 移动端目录浮动按钮(≤640px 显示,见响应式节) */
+#wiki-toc-btn { display: none; }
 #wiki-sidebar {
   width: var(--sidebar-w); flex-shrink: 0;
   border-right: 1px solid var(--paper-edge);
@@ -560,7 +563,7 @@ a:hover { color: var(--cinnabar-deep); }
 
 /* ============ 图谱视图 ============ */
 #view-graph { overflow: hidden; }
-#graph-canvas { display: block; width: 100%; height: 100%; }
+#graph-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 #graph-toolbar {
   position: absolute; top: 14px; left: 16px; z-index: 10;
   display: flex; flex-wrap: wrap; gap: 6px;
@@ -632,6 +635,11 @@ a:hover { color: var(--cinnabar-deep); }
 #view-map { overflow: hidden; }
 #map-chart { width: 100%; height: 100%; }
 #map-chart canvas { touch-action: none; }
+/* 懒加载占位(echarts/geojson 首开地图时注入) */
+.map-loading {
+  padding: 60px 20px; text-align: center;
+  color: var(--ink-3); font-size: 14px; letter-spacing: 2px;
+}
 
 /* 多词条名录浮层 */
 .map-pop {
@@ -714,7 +722,8 @@ a:hover { color: var(--cinnabar-deep); }
 /* ============ 全局搜索结果 ============ */
 #search-pop {
   position: fixed; top: calc(var(--topbar-h) + 6px); right: 18px;
-  width: 380px; max-height: 70vh; overflow-y: auto;
+  width: min(380px, calc(100vw - 20px));
+  max-height: 70vh; overflow-y: auto;
   background: var(--paper-1);
   border: 1px solid var(--paper-edge);
   border-radius: var(--radius-paper);
@@ -795,9 +804,62 @@ a:hover { color: var(--cinnabar-deep); }
   #topbar .brand .subtitle { display: none; }
   #global-search { width: 150px; }
   #global-search .kbd { display: none; }
-  #src-switch button { padding: 6px 7px; font-size: 11.5px; letter-spacing: 0; }
-  #src-switch button .sdot { display: none; }
+  #src-switch button { padding: 6px 8px; font-size: 11.5px; letter-spacing: 0; }
   :root { --drawer-w: 100vw; --sidebar-w: 210px; }
+}
+
+/* 手机/窄窗(≤640px):顶栏收缩为 色点切换 + 图标搜索;目录钮/侧栏滑出 */
+@media (max-width: 640px) {
+  #topbar { gap: 8px; padding: 0 10px; }
+  #topbar .brand .title { font-size: 17px; letter-spacing: 1px; }
+  #help-btn { display: none; }
+  /* 来源切换:藏字留色点(比对=双色点),hover/激活态提示见 title 与 toast */
+  #src-switch .sst { display: none; }
+  #src-switch button { padding: 8px 9px; }
+  #global-search { width: 118px; padding: 5px 10px; }
+  #global-search input { font-size: 13px; }
+  #global-search input::placeholder { color: transparent; }   /* 空间不足,聚焦后输入即知 */
+
+  /* Wiki 目录:浮动按钮 + 侧栏滑出 */
+  #wiki-toc-btn {
+    display: inline-block;
+    position: absolute; left: 10px; top: 10px; z-index: 25;
+    border: 1px solid var(--paper-edge);
+    background: color-mix(in srgb, var(--paper-1) 92%, transparent);
+    color: var(--ink-2); font-size: 12.5px;
+    padding: 5px 11px; border-radius: var(--radius-paper);
+    box-shadow: 0 2px 10px var(--paper-shadow);
+  }
+  #wiki-sidebar {
+    position: absolute; z-index: 30; height: 100%;
+    width: min(78vw, var(--sidebar-w));
+    transform: translateX(-102%);
+    transition: transform var(--dur-mid) var(--ease-brush);
+    background: var(--paper-1);
+    box-shadow: 8px 0 30px var(--paper-shadow);
+  }
+  #wiki-sidebar.open { transform: translateX(0); }
+  #wiki-main { padding: 46px 16px 80px; }
+  #wiki-content h1 { font-size: 24px; }
+
+  /* 抽屉全宽已是 100vw;正文留白收紧 */
+  #drawer .drawer-body { padding: 12px 16px 40px; }
+  #drawer .drawer-head { padding: 14px 16px 10px; }
+
+  /* 时间轴:图例面板收窄;缩略条贴近底边 */
+  #tl-filters { right: 8px; top: 8px; max-width: 46vw; }
+  #tl-minimap { left: 8px; right: 8px; }
+
+  /* 图谱:工具栏换行限制、力度面板宽度自适应(默认折叠由 JS 处理) */
+  #graph-toolbar { max-width: calc(100vw - 60px); }
+  #graph-forces { width: auto; max-width: 52vw; }
+  #graph-forces .gf-label { width: 58px; }
+  #graph-hint { display: none; }
+
+  /* 地图:滑杆条宽度放大到近全宽 */
+  #map-slider-wrap { width: calc(100% - 20px); bottom: 12px; padding: 10px 14px 8px; }
+  #map-legend { font-size: 11.5px; padding: 8px 10px; }
+  .map-pop { max-width: 62vw; }
 }
 
 /* ============ 减动效偏好 ============ */
