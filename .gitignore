@@ -1,0 +1,2 @@
+# 部署临时产物（tools/deploy.mjs 生成，勿入库）
+.deploy-tmp/

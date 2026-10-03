@@ -86,7 +86,19 @@ lib/                d3 / echarts / marked / 中国GeoJSON / 霞鹜文楷（全�
 tools/build-data.mjs  数据管线（Node ≥18，零依赖）
 tools/curated.json    人工策展层
 tools/serve.mjs       零依赖静态服务器
+tools/deploy.mjs      组装 Cloudflare Pages 部署目录（白名单复制）
+部署到Cloudflare.bat  一键发布线上
 ```
+
+## 发布到线上（Cloudflare Pages）
+
+线上地址：**https://dangdai-wenxue.pages.dev**
+
+- **一键发布**：双击 `部署到Cloudflare.bat`（重建数据 → 组装部署目录 → 上传 Cloudflare Pages）
+- 命令行等价：`node tools/deploy.mjs && npx wrangler pages deploy .deploy-tmp --project-name=dangdai-wenxue`
+- 首次使用需先 `npx wrangler login` 完成浏览器授权（一次即可，凭证由 wrangler 保管）
+- 发布范围是白名单：`index.html` / `404.html` / `css` / `js` / `lib`；`tools/`（含策展层与术语表）、文档、会话文件等本地内容一律不发布
+- 注意：Vault 是本机数据源，线上是纯静态快照——改动内容后需重新发布一次
 
 ## 备注
 
