@@ -340,7 +340,7 @@ const periodizations = { overview: [] };
       if (key === 'zhu' && mz) { num = cnNum(mz[1]); title = `第${mz[1]}章 ${mz[2]}`; }
       else if (key === 'hong' && mh) { num = +mh[1]; title = `第${mh[2]}章 ${mh[3].replace(/_/g, ' ')}`; }
       if (!num) continue;
-      list.push({ num, title, file: f, path: `${pz.dir}/${f}` });
+      list.push({ num, title, file: f, path: `${pz.dir}/${f}`, body: readMd(path.join(VAULT, pz.dir, f)) });
     }
     list.sort((a, b) => a.num - b.num);
     chaptersByBook[key] = list;
@@ -393,7 +393,8 @@ const periodizations = { overview: [] };
   }
   const tocIdx = nm => { const i = tocOrder.indexOf(nm); return i < 0 ? 1e4 : i; };
 
-  // 挂载:年代段中点年落入哪个期就归哪期(综述页不挂载)
+  // 挂载:年代段笔记只进朱版树(用户钦定:同一批年代段笔记不在洪版重复出现,
+  // 洪版树 = 纯章节结构);综述页不挂载
   const unspanned = [];
   for (const n of notes) {
     if (overviewNames.has(n.name)) { periodizations.overview.push(n.name); continue; }
@@ -401,14 +402,11 @@ const periodizations = { overview: [] };
     if (!span) { unspanned.push(n.name); continue; }
     if (!n.from) { n.from = span.from; n.to = span.to; }   // 回填基础解析漏掉的年代
     const mid = (span.from + span.to) / 2;
-    for (const key of Object.keys(PERIZ)) {
-      const p = periodizations[key].periods.find(p => mid >= p.from && mid < p.to);
-      if (p) p.notes.push(n.name);
-    }
+    const p = periodizations.zhu.periods.find(p => mid >= p.from && mid < p.to);
+    if (p) p.notes.push(n.name);
   }
-  for (const key of Object.keys(PERIZ))
-    for (const p of periodizations[key].periods)
-      p.notes.sort((a, b) => tocIdx(a) - tocIdx(b));
+  for (const p of periodizations.zhu.periods)
+    p.notes.sort((a, b) => tocIdx(a) - tocIdx(b));
   // 解析失败者归入综述组兜底,保证不丢内容
   periodizations.overview.push(...unspanned);
   globalThis.__perizReport = { unspanned: unspanned.length };
@@ -653,6 +651,13 @@ for (const c of [...chronicle, ...hongChronicle]) {
    首次打开时由 app.js 的 ensureBodyData() 动态补载(file:// 兼容)。 */
 const entitiesCore = entities.map(({ body, cmp, ...rest }) => rest);
 const notesCore = notes.map(({ body, ...rest }) => rest);
+// 分期导航进首屏时瘦身:章节只留元数据,正文进惰性包供页内阅读
+const periodizationsCore = { overview: periodizations.overview };
+for (const key of ['zhu', 'hong']) {
+  const pz = periodizations[key];
+  periodizationsCore[key] = { ...pz, periods: pz.periods.map(p => ({
+    ...p, chapters: p.chapters.map(({ body, file, ...rest }) => rest) })) };
+}
 
 const allEvents = [...chronicle, ...hongChronicle];
 const bySrcCount = { hong: 0, zhu: 0, both: 0, none: 0 };
@@ -666,7 +671,7 @@ for (const e of entities) {
 const DATA = {
   generated: new Date().toISOString().slice(0, 16).replace('T', ' '),
   periods: PERIODS,
-  periodizations,                 // 两套教材分期(wiki 分期导航)
+  periodizations: periodizationsCore,   // 两套教材分期(wiki 分期导航,章正文在惰性包)
   books: {
     hong: { ...BOOKS.hong, chronicle: hongChronicle.length, chapters: globalThis.__bookChapters.hong },
     zhu:  { ...BOOKS.zhu,  chronicle: chronicle.length, chapters: globalThis.__bookChapters.zhu },
@@ -693,10 +698,18 @@ const DATA = {
   },
 };
 
-// 正文惰性包:实体名/笔记名 → {body, cmp?}(后写优先,与 byName 同序)
+// 正文惰性包:实体名/笔记名 → {body, cmp?}(后写优先,与 byName 同序);
+// 另带 __chapters: 章节路径 → 原文正文(wiki 分期导航页内阅读用)
 const bodyPack = {};
 for (const e of entities) bodyPack[e.name] = { body: e.body || '', cmp: e.cmp || null };
 for (const n of notes) bodyPack[n.name] = { body: n.body || '' };
+{
+  const chapPack = {};
+  for (const key of ['zhu', 'hong'])
+    for (const p of periodizations[key].periods)
+      for (const c of p.chapters) chapPack[c.path] = c.body;
+  bodyPack.__chapters = chapPack;
+}
 
 const js = '/* 由 tools/build-data.mjs 生成 —— 请勿手改；正文与口径摘段在 data-body.js(惰性加载) */\n'
   + `window.DATA = ${JSON.stringify(DATA, null, 0)};\n`;
@@ -727,7 +740,7 @@ console.log(`未命中里程碑: ${milestones.filter(m => !usedMilestone.has(m.t
 for (const key of ['zhu', 'hong']) {
   const pz = DATA.periodizations[key];
   console.log(`分期导航[${pz.label}]: ` + pz.periods.map(p =>
-    `${p.name}(${p.chapters.length}章${p.hidden ? ',暂隐' : ',' + p.notes.length + '篇笔记'})`).join(' | '));
+    `${p.name}(${p.chapters.length}章${p.hidden ? ',暂隐' : p.notes.length ? ',' + p.notes.length + '篇笔记' : ''})`).join(' | '));
 }
 if (globalThis.__perizReport.unspanned)
   console.log(`分期导航: ${globalThis.__perizReport.unspanned} 篇笔记未解析出年代段,已归入综述组`);

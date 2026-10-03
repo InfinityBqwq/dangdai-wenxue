@@ -1,8 +1,10 @@
 /* ============================================================
    wiki.js — WIKI 视图：左侧分类树 + 右侧卡片阅读
    树顶部为分期导航:综述 + 朱/洪两套教材分期(骨架来自《原文》章文件名,
-   由 build-data.mjs 生成于 D.periodizations)。章节行跳 Obsidian 原文,
-   笔记行开阅读抽屉;hidden 期只显示暂隐提示行。其后按实体类型分组。
+   由 build-data.mjs 生成于 D.periodizations)。章节行页内阅读原文
+   (正文在惰性包 DATA_BODY.__chapters,Obsidian 仅为拓展入口);
+   年代段笔记只在朱版树出现一次,洪版树为纯章节结构;
+   hidden 期只显示暂隐提示行。其后按实体类型分组。
    词条卡恒全量(不按编年口径拆分),分期导航恒显两套口径,不随顶栏切换。
    ============================================================ */
 (function () {
@@ -64,7 +66,7 @@
       const chapN = vis.reduce((a, p) => a + p.chapters.length, 0);
       const noteN = vis.reduce((a, p) => a + p.notes.length, 0);
       const inner = collapsible(tree,
-        gheadHtml(colorOf[key], pz.label, `${chapN}章 · ${noteN}笔记`, `${pz.label} · ${pz.book}`), 'wt-scheme');
+        gheadHtml(colorOf[key], pz.label, `${chapN}章${noteN ? ' · ' + noteN + '笔记' : ''}`, `${pz.label} · ${pz.book}`), 'wt-scheme');
       for (const p of pz.periods) {
         if (p.hidden) {
           const muted = document.createElement('div');
@@ -77,14 +79,15 @@
         per.className = 'wt-period';
         per.innerHTML = `
           <div class="wt-phead"><span>${p.name}</span>
-            <span><span class="count">${p.chapters.length}章 · ${p.notes.length}篇</span> <span class="arrow">▶</span></span></div>
+            <span><span class="count">${p.chapters.length}章${p.notes.length ? ' · ' + p.notes.length + '篇' : ''}</span> <span class="arrow">▶</span></span></div>
           <div class="wt-items"><div class="wt-inner">
-            ${p.chapters.map(c => `<button class="wt-chap" data-path="${escAttr(c.path)}" title="在 Obsidian 中打开原文">${c.title}</button>`).join('')}
+            ${p.chapters.map(c => `<button class="wt-chap" data-path="${escAttr(c.path)}" title="打开原文(页内阅读)">${c.title}</button>`).join('')}
             ${p.notes.map(noteBtn).join('')}
           </div></div>`;
         per.querySelector('.wt-phead').addEventListener('click', () => per.classList.toggle('open'));
+        const chapByPath = new Map(p.chapters.map(c => [c.path, c]));
         per.querySelectorAll('.wt-chap').forEach(b =>
-          b.addEventListener('click', () => window.open(obsidianUri(b.dataset.path), '_blank')));
+          b.addEventListener('click', () => showChapter(chapByPath.get(b.dataset.path), pz)));
         per.querySelectorAll('.wt-item').forEach(b =>
           b.addEventListener('click', () => show(b.dataset.name)));
         inner.appendChild(per);
@@ -191,6 +194,50 @@
   }
   window.wikiShow = show;
 
+  /* 教材章原文页内阅读(用户钦定:网页内展示是基本,Obsidian 跳转只是拓展)。
+     正文在惰性包 DATA_BODY.__chapters(路径 → 原文),未载则 ensureBodyData 后重渲染。 */
+  let currentPath = '';
+  function showChapter(ch, pz) {
+    if (!ch) return;
+    currentName = '';
+    currentPath = ch.path;
+    const box = document.getElementById('wiki-content');
+    document.querySelectorAll('.wt-item').forEach(b => b.classList.remove('current'));
+    document.querySelectorAll('.wt-chap').forEach(b =>
+      b.classList.toggle('current', b.dataset.path === ch.path));
+    document.getElementById('wiki-sidebar')?.classList.remove('open');
+    const lib = window.DATA_BODY && window.DATA_BODY.__chapters;
+    const raw = lib ? lib[ch.path] : '';
+    box.innerHTML = `
+      <h1>${ch.title}</h1>
+      <div class="fm-badges">
+        <span class="badge solid" style="background:var(--ink-2)">教材原文</span>
+        <span class="badge solid" style="background:${pz.id === 'hong' ? 'var(--src-hong)' : 'var(--src-zhu)'}">${pz.label}</span>
+      </div>
+      <div style="margin-top:18px" class="wiki-article">${raw
+        ? window.renderWikiStripped(window.stripTitleHeading(raw, ch.title))
+        : '（原文加载中…）'}</div>
+      <div class="wiki-links-bar" id="wiki-actions">
+        <span class="wlb-label">关联入口</span>
+        <button data-act="obsidian" data-uri="${escAttr(obsidianUri(ch.path))}">✎ Obsidian 打开</button>
+      </div>`;
+    box.querySelector('#wiki-actions')?.addEventListener('click', e => {
+      const btn = e.target.closest('button');
+      if (btn && btn.dataset.act === 'obsidian') window.open(btn.dataset.uri, '_blank');
+    });
+    if (!(window.prefersReducedMotion && window.prefersReducedMotion())) {
+      box.classList.remove('in');
+      void box.offsetWidth;
+      box.classList.add('in');
+    }
+    document.getElementById('wiki-main').scrollTop = 0;
+    if (!raw && !window.DATA_BODY && window.ensureBodyData) {
+      window.ensureBodyData().then(() => {
+        if (currentPath === ch.path) showChapter(ch, pz);
+      }).catch(() => { /* 保持加载中提示 */ });
+    }
+  }
+
   window.Views.wiki = {
     init() {
       buildTree();
@@ -203,7 +250,7 @@
       document.getElementById('wiki-main').addEventListener('click', () => sb.classList.remove('open'));
       const box = document.getElementById('wiki-content');
       box.innerHTML = `<h1 style="border:none;font-size:22px;color:var(--ink-3)">选择左侧任意卡片开始阅读</h1>
-        <p style="color:var(--ink-3)">全库共 ${D.entities.length} 张知识卡片 + ${D.notes.length} 篇分期笔记与综述,按朱栋霖 / 洪子诚两套教材分期编目(分期骨架取自《原文》章名,章节可跳 Obsidian)。<br>
+        <p style="color:var(--ink-3)">全库共 ${D.entities.length} 张知识卡片 + ${D.notes.length} 篇分期笔记与综述,按朱栋霖 / 洪子诚两套教材分期编目(分期骨架取自《原文》章名,章节原文可在页内阅读)。<br>
         卡片正文中并排两书说法;编年口径由顶栏切换。</p>`;
     },
     onShow(params) {
