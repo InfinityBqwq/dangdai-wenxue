@@ -35,9 +35,9 @@
   const SRC_KEY = 'wenxue-src';
   const SRC_MODES = (CFG.sources && CFG.sources.modes) || [];
   const SRC_TOAST = {
-    zhu: '编年:朱栋霖大事记(默认口径)',
-    hong: '编年:洪子诚年表(1949—2000,逐月详编)',
-    compare: '编年双轨:轴上朱记 · 轴下洪表(词条卡恒并排两书说法)',
+    zhu: '全局口径:朱栋霖(时间轴编年 + Wiki 分期导航)',
+    hong: '全局口径:洪子诚(时间轴编年 + Wiki 分期导航)',
+    compare: '比对模式:时间轴双轨并置;Wiki 并置两版分期',
   };
   window.APP_STATE = window.APP_STATE || {};
   {

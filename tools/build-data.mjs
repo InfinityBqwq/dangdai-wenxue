@@ -346,6 +346,26 @@ const periodizations = { overview: [] };
     chaptersByBook[key] = list;
   }
 
+  // 章节总结卡(wiki/sources,AI 总结笔记):卡文件名 == 章文件名,逐一挂载。
+  // 页内阅读时置于章正文之前作导读,缓解整章原文的阅读压力(用户钦定)。
+  const sumAttach = {};
+  {
+    const file2chap = new Map();
+    for (const key of Object.keys(PERIZ))
+      for (const c of chaptersByBook[key]) file2chap.set(c.file, c);
+    const sdir2 = path.join(VAULT, 'wiki', 'sources');
+    for (const f of fs.readdirSync(sdir2).sort()) {
+      if (!f.endsWith('.md') || !file2chap.has(f)) continue;
+      const { body } = parseFM(readMd(path.join(sdir2, f)).replace(/^\uFEFF/, ''));
+      if (!body.trim()) continue;
+      const ch = file2chap.get(f);
+      if (!ch.sumBody || body.length > ch.sumBody.length) { ch.sumBody = body; ch.sum = f.replace(/\.md$/, ''); }
+    }
+    for (const key of Object.keys(PERIZ))
+      sumAttach[key] = `${chaptersByBook[key].filter(c => c.sumBody).length}/${chaptersByBook[key].length}`;
+  }
+  globalThis.__perizReport = { unspanned: 0, sumAttach };
+
   // 各期骨架(chapters 按章号区间填充;hidden 期照常携带数据,由前端决定不渲染)
   for (const key of Object.keys(PERIZ)) {
     const pz = PERIZ[key];
@@ -409,7 +429,7 @@ const periodizations = { overview: [] };
     p.notes.sort((a, b) => tocIdx(a) - tocIdx(b));
   // 解析失败者归入综述组兜底,保证不丢内容
   periodizations.overview.push(...unspanned);
-  globalThis.__perizReport = { unspanned: unspanned.length };
+  globalThis.__perizReport.unspanned = unspanned.length;
 }
 
 /* ---------------- 5. 策展层合并 ---------------- */
@@ -656,7 +676,7 @@ const periodizationsCore = { overview: periodizations.overview };
 for (const key of ['zhu', 'hong']) {
   const pz = periodizations[key];
   periodizationsCore[key] = { ...pz, periods: pz.periods.map(p => ({
-    ...p, chapters: p.chapters.map(({ body, file, ...rest }) => rest) })) };
+    ...p, chapters: p.chapters.map(({ body, file, sumBody, ...rest }) => rest) })) };
 }
 
 const allEvents = [...chronicle, ...hongChronicle];
@@ -699,7 +719,7 @@ const DATA = {
 };
 
 // 正文惰性包:实体名/笔记名 → {body, cmp?}(后写优先,与 byName 同序);
-// 另带 __chapters: 章节路径 → 原文正文(wiki 分期导航页内阅读用)
+// 另带 __chapters: 章节路径 → {body, sum}(原文 + AI 总结,wiki 分期导航页内阅读用)
 const bodyPack = {};
 for (const e of entities) bodyPack[e.name] = { body: e.body || '', cmp: e.cmp || null };
 for (const n of notes) bodyPack[n.name] = { body: n.body || '' };
@@ -707,7 +727,7 @@ for (const n of notes) bodyPack[n.name] = { body: n.body || '' };
   const chapPack = {};
   for (const key of ['zhu', 'hong'])
     for (const p of periodizations[key].periods)
-      for (const c of p.chapters) chapPack[c.path] = c.body;
+      for (const c of p.chapters) chapPack[c.path] = { body: c.body, sum: c.sumBody || '' };
   bodyPack.__chapters = chapPack;
 }
 
@@ -744,5 +764,6 @@ for (const key of ['zhu', 'hong']) {
 }
 if (globalThis.__perizReport.unspanned)
   console.log(`分期导航: ${globalThis.__perizReport.unspanned} 篇笔记未解析出年代段,已归入综述组`);
+console.log(`章节总结卡覆盖(wiki/sources): 朱 ${globalThis.__perizReport.sumAttach.zhu} / 洪 ${globalThis.__perizReport.sumAttach.hong}`);
 console.log(`未解析链接目标(前20): ${[...missingLinkTargets].slice(0, 20).join('、') || '无'}`);
 console.log(`输出体积: data.js ${(fs.statSync(OUT_FILE).size / 1024 / 1024).toFixed(2)} MB(首屏) + data-body.js ${(fs.statSync(OUT_BODY_FILE).size / 1024 / 1024).toFixed(2)} MB(惰性)`);

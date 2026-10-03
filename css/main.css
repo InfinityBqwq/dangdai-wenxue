@@ -529,7 +529,35 @@ a:hover { color: var(--cinnabar-deep); }
 .wt-chap::before { content: '§ '; opacity: .55; }
 .wt-chap:hover { background: var(--paper-2); color: var(--ink-0); }
 .wt-chap.current { color: var(--cinnabar); background: var(--cinnabar-soft); }
+/* 章节总结行(每章 AI 总结,嵌于章名行下) */
+.wt-sum {
+  display: block; width: 100%; text-align: left;
+  border: none; background: transparent; cursor: pointer;
+  padding: 2px 10px 3px 48px; font-size: 11.5px; color: var(--ink-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  border-radius: 3px;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.wt-sum::before { content: '✦ '; color: var(--gold); opacity: .85; }
+.wt-sum:hover { background: var(--paper-2); color: var(--ink-1); }
 .wt-muted { padding: 4px 10px 4px 16px; font-size: 12px; color: var(--ink-3); opacity: .7; }
+
+/* 章节页顶 AI 总结导读盒(showChapter 渲染,<details> 可折叠) */
+.chap-sum {
+  margin: 16px 0 0;
+  border: 1px solid var(--ink-wash); border-radius: 4px;
+  background: color-mix(in srgb, var(--paper-2) 55%, transparent);
+}
+.chap-sum > summary {
+  cursor: pointer; user-select: none;
+  padding: 10px 16px; font-size: 13.5px;
+  font-family: var(--font-brush); letter-spacing: 1.5px; color: var(--ink-1);
+}
+.chap-sum > summary::before { content: '✦ '; color: var(--gold); }
+.chap-sum > summary::marker { content: ''; }
+.chap-sum[open] > summary { border-bottom: 1px dashed var(--ink-wash); }
+.chap-sum-body { padding: 10px 20px 14px; font-size: 14px; }
+.chap-sum-body h1, .chap-sum-body h2 { font-size: 16px; margin: .8em 0 .4em; }
 
 /* Wiki 正文切换淡入（由 wiki.js 重触发 .in 类） */
 #wiki-content.in > * { animation: wikiIn .32s var(--ease-out-soft) both; }
