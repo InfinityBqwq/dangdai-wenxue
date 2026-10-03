@@ -3,3 +3,11 @@
 
 # wrangler 本地缓存
 .wrangler/
+
+# 公开发布前移出版本库(本地文件保留):代理敏感词表/会话计划/审查截图/脱敏副本
+tools/sensitive-terms.txt
+.zcode/
+.review/
+.scrub*
+*.scrub
+.scrub.map
