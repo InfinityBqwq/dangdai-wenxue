@@ -1,6 +1,4 @@
-@import url('./lxgwwenkai-light.css');
+/* 站内只用到 LXGW WenKai 400/700(--font-mono 用系统等宽,light 无引用):
+   砍掉 light 与 3 个 mono 变体,省 ~525KB 无效 CSS 解析与潜在字体请求 */
 @import url('./lxgwwenkai-regular.css');
-@import url('./lxgwwenkaimono-bold.css');
-@import url('./lxgwwenkaimono-light.css');
-@import url('./lxgwwenkaimono-regular.css');
 @import url('./lxgwwenkai-bold.css');

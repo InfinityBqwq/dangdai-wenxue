@@ -45,8 +45,9 @@
     <div id="tl-minimap"></div>
   </section>
 
-  <section id="view-wiki" class="view">
-    <aside id="wiki-sidebar">
+<section id="view-wiki" class="view">
+  <button id="wiki-toc-btn" title="打开目录">☰ 目录</button>
+  <aside id="wiki-sidebar">
       <div class="ws-head">知识库目录</div>
       <div id="wiki-tree"></div>
     </aside>
@@ -96,17 +97,16 @@
 <div id="toast"></div>
 
 <script src="lib/d3.min.js"></script>
-<script src="lib/echarts.min.js"></script>
 <script src="lib/marked.min.js"></script>
 <script src="js/data.js"></script>
 <script src="js/config.js"></script>
 <script src="js/app.js"></script>
 <script src="js/timeline.js"></script>
 <script src="js/wiki.js"></script>
-<script src="lib/china-geojson.js"></script>
 <script src="js/graph.js"></script>
 <script src="js/map.js"></script>
 <script src="js/keyboard.js"></script>
+<!-- echarts 与中国 GeoJSON(共 1.6MB)不随首屏加载:首次切到地图视图时由 map.js 按需注入 -->
 <script>
 // 卷轴开幕
 window.addEventListener('load', () => {

@@ -647,7 +647,13 @@ for (const c of [...chronicle, ...hongChronicle]) {
   if (y < 1949 || y > 2018) c.out = true;
 }
 
-/* ---------------- 8. 输出 ---------------- */
+/* ---------------- 8. 输出(拆两份:核心即用 + 正文惰性包) ----------------
+   核心包 data.js:时间轴/图谱/地图/搜索所需字段(summary 保留作搜索摘要),
+   首屏加载;正文包 data-body.js:词条正文 + 两史口径摘段,抽屉/Wiki
+   首次打开时由 app.js 的 ensureBodyData() 动态补载(file:// 兼容)。 */
+const entitiesCore = entities.map(({ body, cmp, ...rest }) => rest);
+const notesCore = notes.map(({ body, ...rest }) => rest);
+
 const allEvents = [...chronicle, ...hongChronicle];
 const bySrcCount = { hong: 0, zhu: 0, both: 0, none: 0 };
 for (const e of entities) {
@@ -665,8 +671,8 @@ const DATA = {
     hong: { ...BOOKS.hong, chronicle: hongChronicle.length, chapters: globalThis.__bookChapters.hong },
     zhu:  { ...BOOKS.zhu,  chronicle: chronicle.length, chapters: globalThis.__bookChapters.zhu },
   },
-  entities,                       // 实体卡（含正文）
-  notes,                          // 分期笔记
+  entities: entitiesCore,         // 实体卡核心字段(正文在 data-body.js)
+  notes: notesCore,               // 分期笔记(同上)
   events: allEvents.filter(c => !c.out),
   edges,
   bands,
@@ -687,9 +693,18 @@ const DATA = {
   },
 };
 
-const js = '/* 由 tools/build-data.mjs 生成 —— 请勿手改；Vault 更新后运行 node tools/build-data.mjs */\n'
+// 正文惰性包:实体名/笔记名 → {body, cmp?}(后写优先,与 byName 同序)
+const bodyPack = {};
+for (const e of entities) bodyPack[e.name] = { body: e.body || '', cmp: e.cmp || null };
+for (const n of notes) bodyPack[n.name] = { body: n.body || '' };
+
+const js = '/* 由 tools/build-data.mjs 生成 —— 请勿手改；正文与口径摘段在 data-body.js(惰性加载) */\n'
   + `window.DATA = ${JSON.stringify(DATA, null, 0)};\n`;
+const bodyJs = '/* 由 tools/build-data.mjs 生成 —— 惰性包:词条正文 + 两史口径摘段,勿手改 */\n'
+  + `window.DATA_BODY = ${JSON.stringify(bodyPack, null, 0)};\n`;
 fs.writeFileSync(OUT_FILE, js);
+const OUT_BODY_FILE = path.join(HERE, '..', 'js', 'data-body.js');
+fs.writeFileSync(OUT_BODY_FILE, bodyJs);
 
 /* ---------------- 9. 统计报告 ---------------- */
 const noLife = entities.filter(e => e.type === 'person' && !e.birth).length;
@@ -717,4 +732,4 @@ for (const key of ['zhu', 'hong']) {
 if (globalThis.__perizReport.unspanned)
   console.log(`分期导航: ${globalThis.__perizReport.unspanned} 篇笔记未解析出年代段,已归入综述组`);
 console.log(`未解析链接目标(前20): ${[...missingLinkTargets].slice(0, 20).join('、') || '无'}`);
-console.log(`输出体积: ${(fs.statSync(OUT_FILE).size / 1024 / 1024).toFixed(2)} MB`);
+console.log(`输出体积: data.js ${(fs.statSync(OUT_FILE).size / 1024 / 1024).toFixed(2)} MB(首屏) + data-body.js ${(fs.statSync(OUT_BODY_FILE).size / 1024 / 1024).toFixed(2)} MB(惰性)`);

@@ -66,6 +66,7 @@
      （收缩淡出）、已有钉 update（尺寸/位置微调）。播放与滑杆与
      键盘步进共用同一套过渡；reduced-motion 时硬切。 */
   function setYear(y, force) {
+    if (!chart) return;                        // 库未就绪(懒加载中)
     year = Math.max(YMIN, Math.min(YMAX, y));
     const list = locsAt(year);
     const key = visibleKey(list);
@@ -226,13 +227,41 @@
     };
   }
 
+  /* ---------- 库与地图数据按需加载(共约 1.6MB,首屏不加载) ---------- */
+  function injectScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src; s.onload = resolve;
+      s.onerror = () => reject(new Error('加载失败: ' + src));
+      document.head.appendChild(s);
+    });
+  }
+  let libsPromise = null;
+  function ensureLibs() {
+    if (window.echarts && window.CHINA_GEOJSON) return Promise.resolve();
+    if (libsPromise) return libsPromise;
+    chartDom.innerHTML = '<div class="map-loading">🗺 地图资源加载中…</div>';
+    libsPromise = (async () => {
+      try {
+        if (!window.echarts) await injectScript('lib/echarts.min.js');
+        if (!window.CHINA_GEOJSON) await injectScript('lib/china-geojson.js');
+      } catch (err) {
+        libsPromise = null;                    // 允许下次进入重试
+        chartDom.innerHTML = '<div class="map-loading">⚠ 地图资源加载失败,请检查 lib/ 目录后重进视图</div>';
+        throw err;
+      }
+    })();
+    return libsPromise;
+  }
+
   /* ---------- 键盘 API ---------- */
   window.MAP = {
     nudge(d) {
+      if (!chart) return;                      // 库未就绪(懒加载中)
       stopPlay();
       setYear(Math.floor(year) + (d > 0 ? Math.ceil(d) : Math.floor(d)), false);
     },
-    togglePlay() { playRaf ? stopPlay() : startPlay(); },
+    togglePlay() { if (chart) (playRaf ? stopPlay() : startPlay()); },
     playing: () => !!playRaf,
   };
   window.closeMapPop = closePop;
@@ -268,38 +297,18 @@
 
   /* ---------- 模块接口 ---------- */
   let inited = false;
+  let pendingShow = null;               // 库就绪前收到的 onShow 参数
   window.Views.map = {
     init() {
       if (inited) return;
       inited = true;
-      if (!window.CHINA_GEOJSON) {
-        chartDom.innerHTML = '<div style="padding:60px;text-align:center;color:var(--ink-3)">⚠ 地图数据缺失（lib/china-geojson.js）<br>重新运行 tools/download-libs.sh 下载</div>';
-        return;
-      }
-      slider.step = '0.01';
-      echarts.registerMap('china', window.CHINA_GEOJSON);
-      chart = echarts.init(chartDom, null, { renderer: 'canvas' });
-      chart.setOption(baseOption());
-      chart.on('click', params => {
-        const d = params.data;
-        if (!d || !d.items) return;
-        if (d.items.length === 1) openEntry(d.items[0]);
-        else {
-          const ev = params.event && params.event.event || params.event;
-          showPinPop(ev ? ev.clientX : 400, ev ? ev.clientY : 300, d.name, d.items);
-        }
-      });
-      chart.on('georoam', stopFly);              // 用户手动漫游 → 打断飞行
-      slider.addEventListener('input', e => {
-        stopPlay();
-        setYear(+e.target.value);
-      });
-      playBtn.addEventListener('click', () => playRaf ? stopPlay() : startPlay());
-      window.addEventListener('resize', () => chart && chart.resize());
-      setYear(YMIN, true);
+      ensureLibs().then(() => {
+        setupChart();
+        if (pendingShow) { const p = pendingShow; pendingShow = null; this.onShow(p); }
+      }).catch(() => { /* 占位错误已显示 */ });
     },
     onShow(params) {
-      if (!chart) return;
+      if (!chart) { pendingShow = params || {}; return; }
       chart.resize();
       if (params && params.person) {
         const loc = locs.find(l => l.n === params.person);
@@ -313,4 +322,29 @@
       }
     },
   };
+
+  /* 图表实际搭建(库就绪后执行;原 init 主体) */
+  function setupChart() {
+    slider.step = '0.01';
+    echarts.registerMap('china', window.CHINA_GEOJSON);
+    chart = echarts.init(chartDom, null, { renderer: 'canvas' });
+    chart.setOption(baseOption());
+    chart.on('click', params => {
+      const d = params.data;
+      if (!d || !d.items) return;
+      if (d.items.length === 1) openEntry(d.items[0]);
+      else {
+        const ev = params.event && params.event.event || params.event;
+        showPinPop(ev ? ev.clientX : 400, ev ? ev.clientY : 300, d.name, d.items);
+      }
+    });
+    chart.on('georoam', stopFly);              // 用户手动漫游 → 打断飞行
+    slider.addEventListener('input', e => {
+      stopPlay();
+      setYear(+e.target.value);
+    });
+    playBtn.addEventListener('click', () => playRaf ? stopPlay() : startPlay());
+    window.addEventListener('resize', () => chart && chart.resize());
+    setYear(YMIN, true);
+  }
 })();
