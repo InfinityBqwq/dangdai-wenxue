@@ -104,3 +104,10 @@ tools/deploy.mjs      组装 Cloudflare Pages 部署目录（白名单复制）
 
 - 需要 Node.js（≥18）用于数据管线与本地服务器；网页本身零构建、零网络依赖
 - 网页默认经 `http://localhost:8080` 访问；直接双击 index.html 也可用（数据以 script 注入，绕开 file:// 限制）
+
+## GitHub 仓库
+
+- **代码仓库**：https://github.com/InfinityBqwq/dangdai-wenxue（即本仓库）
+- **源笔记仓库**：https://github.com/InfinityBqwq/dangdai-wenxue-notes —— Obsidian 知识库的公开镜像
+
+数据流向：Vault（Obsidian 日常编辑）→ `node tools/build-data.mjs` 生成 `js/data.js`（入网页）；双击 `发布笔记到GitHub.bat` 把 Vault 源笔记镜像同步到源笔记仓库。本机访问 GitHub 需本地代理在线（127.0.0.1:7897）。

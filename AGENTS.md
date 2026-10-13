@@ -6,9 +6,10 @@
 
 - 重建数据：`node tools/build-data.mjs` — 扫描 Obsidian Vault `D:\Doc\Vault\MARKING\中国文学史` → 生成 `js/data.js`。Node ≥18 零依赖；本机无 Python。
 - 本地预览：`node tools/serve.mjs 8080` → http://localhost:8080
-- 用户入口（勿删）：`启动网页.bat`（重建+起服务+开浏览器）、`重建数据.bat`
+- 用户入口（勿删）：`启动网页.bat`（重建+起服务+开浏览器）、`重建数据.bat`、`部署到Cloudflare.bat`（一键发布线上）、`发布笔记到GitHub.bat`（镜像源笔记到公开仓库）
 - 脱敏读写：`node tools/scrub.mjs check|scrub|restore …` — 词条替换为 `〔S##〕` 占位符的脱敏副本，见下「敏感词降噪」节
 - 无 package.json、无测试、无 lint；验证靠浏览器手动检查。`.review/` 存放历次视觉审查截图。
+- GitHub 发布：网站仓库 `origin` = InfinityBqwq/dangdai-wenxue（提交后 `git push`）；源笔记另发 InfinityBqwq/dangdai-wenxue-notes（`node tools/publish-notes.mjs`，以 Vault 为准整目录镜像）。本机 github.com 解析被污染，**GitHub 访问一律走本地代理 `http://127.0.0.1:7897`**（两个仓库均已配 `git config http.proxy`，curl 加 `-x`）。
 
 ## 硬性规则
 
@@ -46,3 +47,5 @@
 - 本机 node v25 的 `cpSync(src, dest, {recursive:true})` 复制目录会静默崩进程（Git Bash 下 exit 127、无任何输出），`copyFileSync` 正常——目录复制一律手动递归（见 `tools/deploy.mjs`）。
 - Cloudflare Pages：未放 `404.html` 时会把一切未知路径回退成 index.html（200），易误判为"文件泄露"；放了 `404.html` 才返回真 404。发布走 `部署到Cloudflare.bat` / `tools/deploy.mjs` 白名单，勿把 `tools/`（curated、术语表）、`.scrub*`、`.wrangler/`、`.deploy-tmp/` 传上线。
 - 视觉审查：截图含 文革 / 反右 等历史词时，视觉审查代理可能被内容过滤器拦截（[1301]），兜底改用人工逐页核查或小图分批送审；前置预防见「敏感词降噪」节。
+- 本机 github.com DNS 污染（解析失败而百度正常）：走本地代理 127.0.0.1:7897（Clash 系 mixed 端口），代理软件没开时推送必失败，报错先查代理。另：Vault 的 obsidian-git「vault backup」只是本地自动提交（插件未存凭据、从未推送），源笔记上 GitHub 走 `发布笔记到GitHub.bat`，别指望 vault 自动备份上云。
+- 仓库已公开发布（2026-10-03）：`tools/sensitive-terms.txt`、`.zcode/`、`.review/` 曾在早期提交里，已用 filter-branch 从全部历史清除并 gitignore——勿再入库（本地文件仍在，术语表照常可用）。
