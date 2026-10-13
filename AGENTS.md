@@ -1,6 +1,6 @@
 # AGENTS.md
 
-中国当代文学史（1949—2018）水墨长卷可视化网站：纯静态单页，时间轴 / Wiki / 图谱 / 地图四个视图。零构建、零 npm 依赖；d3 / echarts / marked / 中国 GeoJSON / 霞鹜文楷字体全部本地化在 `lib/`（离线可用）。仓库语言为中文，注释与提交信息沿用中文。
+中国当代文学史（1949—2018）水墨长卷可视化网站：纯静态单页，时间轴 / Wiki / 图谱 / 地图 / 拼图白板五个视图。零构建、零 npm 依赖；d3 / echarts / marked / 中国 GeoJSON / 霞鹜文楷字体全部本地化在 `lib/`（离线可用）。仓库语言为中文，注释与提交信息沿用中文。
 
 ## 常用命令
 
@@ -16,8 +16,8 @@
 - `js/data.js` 由管线生成，**勿手改**。数据修正去两处：Vault 原始卡片，或 `tools/curated.json`（人工策展层：里程碑 / 人物印章名单 / 流派带 / 生卒 / 地图钉），改完重跑管线生效。
 - 设计令牌双处同步：`css/theme.css`（CSS 变量，含暗色主题占位）与 `js/config.js`（分期 / 类型色 / 缩放阈值 / 编年口径）。组件样式只引用变量，改肤只动这两处。
 - wiki 分期导航：两套教材分期口径**唯一定义**在 `js/config.js` 的 `periodizations`（含朱版 1949 前暂隐开关 `hideBefore`），`build-data.mjs` 求值该文件并按《原文》两目录的章文件名填充章节 / 笔记——勿在管线里复制第二份口径。顶栏口径**全局生效**（用户钦定）：朱 / 洪模式分期导航只显示对应一版，「比对」并置两版，wiki 实现 `onSourceChange` 重建树。年代段笔记只在朱版树挂载（用户钦定勿改回）；章节正文 + 每章 AI 总结卡（`wiki/sources`，**卡文件名 == 章文件名**逐一对应）入 data-body.js（`__chapters` 键，值 `{body, sum}`）供**页内阅读**——网页内展示是基本，Obsidian 跳转只是拓展入口，AI 总结置顶作导读。
-- 无模块系统：全部 `<script>` 按序加载（data → config → app → timeline → wiki → graph → map → keyboard）。新增脚本须同步 `index.html`；`app.js` 首次路由已推迟到 window load，别提前。
-- 视图模块只暴露全局 API（`window.TL` / `MAP` / `GRAPH`），键盘事件一律经 `js/keyboard.js` 集中分发，勿在视图里自行监听。
+- 无模块系统：全部 `<script>` 按序加载（data → config → app → timeline → wiki → graph → map → puzzle → keyboard）。新增脚本须同步 `index.html`；`app.js` 首次路由已推迟到 window load，别提前。
+- 视图模块只暴露全局 API（`window.TL` / `MAP` / `GRAPH` / `PUZZLE`），键盘事件一律经 `js/keyboard.js` 集中分发，勿在视图里自行监听。
 
 ## 用户钦定的设计决策（勿改回、勿"优化"）
 

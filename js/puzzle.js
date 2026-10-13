@@ -53,17 +53,25 @@
   function init() {
     if (inited) return;
     inited = true;
-    root = document.getElementById('view-puzzle');
-    buildDOM();
-    buildLibraryData();
-    load();
-    renderAll();
-    bindBoard();
-    if (!load.savedView) { // 首次进入：世界原点置于屏幕中心
-      const r = viewport.getBoundingClientRect();
-      state.view = { k: 1, x: r.width / 2, y: r.height / 2 };
+    try {
+      root = document.getElementById('view-puzzle');
+      buildLibraryData(); // 先备好库数据：buildDOM 内的 bindLibrary 渲染 chips/列表依赖它
+      buildDOM();
+      load();
+      renderAll();
+      bindBoard();
+      if (!load.savedView) { // 首次进入：世界原点置于屏幕中心
+        const r = viewport.getBoundingClientRect();
+        state.view = { k: 1, x: r.width / 2, y: r.height / 2 };
+      }
+      applyView();
+    } catch (err) {
+      // init 在 DOMContentLoaded 路由时执行,若此处抛错,load 时的二次路由会被
+      // 上面的 inited 守卫挡回——错误必须在这里显式暴露,否则视图静默残废
+      inited = false;
+      window.__pzErr = String(err && err.stack || err);
+      throw err;
     }
-    applyView();
   }
 
   /* ---------------- DOM 骨架 ---------------- */
@@ -105,7 +113,6 @@
     buildToolbar();
     buildStylebar();
     bindLibrary();
-    bindToolbar();
 
     // 窄屏库面板开合
     const libBtn = document.getElementById('pz-lib-btn');
@@ -523,7 +530,7 @@
       <div class="pz-sb-row"><span class="pz-sb-lab">箭头</span>
         <div class="pz-sb-seg" data-k="arrow">${ARROW_TYPES.map(([v, t]) => `<button data-v="${v}">${t}</button>`).join('')}</div></div>
       <div class="pz-sb-row"><span class="pz-sb-lab">颜色</span>
-        <div class="pz-sb-seg pz-sb-colors">${Object.keys(LINK_VAR).map(v =>
+        <div class="pz-sb-seg pz-sb-colors" data-k="color">${Object.keys(LINK_VAR).map(v =>
           `<button data-v="${v}" title="${LINK_LABEL[v]}"><i style="background:var(${LINK_VAR[v]})"></i>${LINK_LABEL[v]}</button>`).join('')}</div></div>
       <div class="pz-sb-row pz-sb-last">
         <input class="pz-sb-label" type="text" placeholder="标签（如：影响 / 师承）" spellcheck="false">
