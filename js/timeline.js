@@ -475,7 +475,6 @@
   function render() {
     const z = state.zoom;
     gContent.attr('transform', `scale(${z}) translate(${(-state.pan).toFixed(2)},${(-state.panY).toFixed(2)})`);
-    renderMinimap();
     updateFocus();
   }
 
@@ -551,7 +550,6 @@
          避免每次 build() 重建时重复绑定累积） ---------- */
   const DRAG = { on: false, x0: 0, y0: 0, pan0: 0, panY0: 0, moved: false,
                  velX: 0, velY: 0, lastT: 0, prevCX: 0, prevCY: 0 };
-  const MMDRAG = { on: false };   // 缩略导航条拖拽（与主拖拽互斥）
 
   const sampleVel = (cx, cy, dt, store) => {
     if (dt >= 4 && dt < 120) {
@@ -585,8 +583,6 @@
       }
       DRAG.lastT = performance.now(); DRAG.prevCX = e.clientX; DRAG.prevCY = e.clientY;
       requestRender();
-    } else if (MMDRAG.on) {
-      mmPanToClient(e.clientX);
     }
   });
   window.addEventListener('mouseup', () => {
@@ -596,7 +592,6 @@
       const f = flickVel({ x: DRAG.velX, y: DRAG.velY, px: DRAG.prevCX, py: DRAG.prevCY, t: DRAG.lastT });
       if (f) startInertia(f[0], f[1]);
     }
-    MMDRAG.on = false;
   });
 
   function bindInteractions() {
@@ -619,7 +614,7 @@
 
     // 拖拽 = 平移（横向 + 纵向），松手带惯性
     tlView.onmousedown = e => {
-      if (e.target.closest('#tl-filters') || e.target.closest('#tl-minimap')) return;
+      if (e.target.closest('#tl-filters')) return;
       stopInertia(); cancelTween();
       Object.assign(DRAG, { on: true, moved: false, x0: e.clientX, y0: e.clientY,
         pan0: state.pan, panY0: state.panY, velX: 0, velY: 0,
@@ -707,83 +702,6 @@
         filterState[cb.dataset.key] = cb.checked;
         applyFilters();
       }));
-  }
-
-  /* ================= 缩略导航（书签刻度式） ================= */
-  let mm = null, mmFrame, mmHandle, mmDimL, mmDimR, mmW = 0;
-  function buildMinimap() {
-    const wrap = document.getElementById('tl-minimap');
-    wrap.innerHTML = '';
-    mmW = wrap.clientWidth || (window.innerWidth - 32);
-    const h = 46;
-    const xOf = year => (year - X0_YEAR) / (DOC_END - X0_YEAR) * mmW;
-
-    mm = d3.select(wrap).append('svg');
-    mm.attr('width', mmW).attr('height', h);
-
-    // 视口外侧压暗（聚焦"阅读窗"）
-    mmDimL = mm.append('rect').attr('y', 0).attr('height', h)
-      .attr('fill', 'rgba(26,23,18,.09)').style('pointer-events', 'none');
-    mmDimR = mm.append('rect').attr('y', 0).attr('height', h)
-      .attr('fill', 'rgba(26,23,18,.09)').style('pointer-events', 'none');
-
-    // 基线 + 时期色段（首尾相接，消除接缝）
-    mm.append('line')
-      .attr('x1', 0).attr('x2', mmW).attr('y1', 34).attr('y2', 34)
-      .attr('stroke', 'var(--paper-edge)').attr('stroke-width', 1);
-    mm.selectAll('.mm-p').data(CFG.periods).join('rect')
-      .attr('x', (p, i) => xOf(p.from))
-      .attr('width', (p, i) => Math.max(2, (i + 1 < CFG.periods.length ? xOf(CFG.periods[i + 1].from) : mmW) - xOf(p.from) - 1))
-      .attr('y', 32.5).attr('height', 3).attr('rx', 1.5)
-      .attr('fill', p => p.color).attr('opacity', .75);
-
-    // 里程碑：竖向书签刻度（高低区分事件/政策/作品）
-    mm.selectAll('.mm-t').data(majors).join('line')
-      .attr('x1', ev => xOf(eventYear(ev))).attr('x2', ev => xOf(eventYear(ev)))
-      .attr('y1', 33).attr('y2', ev => 33 - (ev.kind === 'event' ? 13 : ev.kind === 'policy' ? 10 : 7))
-      .attr('stroke', '#b3342e').attr('stroke-width', 1.4)
-      .attr('stroke-linecap', 'round').attr('opacity', .75);
-
-    // 年份标注（顶行）
-    mm.selectAll('.mm-y').data([1949, 1966, 1976, 1989, 2000, 2018]).join('text')
-      .attr('x', y => Math.max(10, Math.min(mmW - 10, xOf(y))))
-      .attr('y', 10).attr('font-size', 9).attr('text-anchor', 'middle')
-      .attr('font-family', 'var(--font-mono)')
-      .attr('fill', 'var(--ink-3)').text(y => y);
-
-    // 阅读窗：墨线框 + 顶部把柄
-    mmFrame = mm.append('rect')
-      .attr('y', 4).attr('height', h - 9).attr('rx', 3)
-      .attr('fill', 'none').attr('stroke', 'var(--ink-1)').attr('stroke-width', 1.2)
-      .style('cursor', 'grab');
-    mmHandle = mm.append('rect')
-      .attr('y', 1.5).attr('width', 22).attr('height', 3).attr('rx', 1.5)
-      .attr('fill', 'var(--ink-1)')
-      .style('cursor', 'grab');
-
-    wrap.onmousedown = e => { MMDRAG.on = true; mmPanToClient(e.clientX); };
-
-    renderMinimap();   // 建完立即定位（build() 的渲染发生在此之前）
-  }
-
-  /* 缩略导航条：点击/拖拽位置 → 长卷平移（供全局 mousemove 与条内 mousedown 共用） */
-  function mmPanToClient(clientX) {
-    const wrapEl = document.getElementById('tl-minimap');
-    if (!wrapEl) return;
-    const r = wrapEl.getBoundingClientRect();
-    const frac = (clientX - r.left) / r.width;
-    state.pan = clampPan(frac * stripW - (W / 2) / state.zoom);
-    requestRender();
-  }
-
-  function renderMinimap() {
-    if (!mmFrame || !mmW) return;
-    const x0 = state.pan / stripW * mmW;
-    const vw = Math.max(14, (W / state.zoom) / stripW * mmW);
-    mmFrame.attr('x', x0).attr('width', vw);
-    mmHandle.attr('x', x0 + vw / 2 - 11);
-    mmDimL.attr('x', 0).attr('width', Math.max(0, x0));
-    mmDimR.attr('x', x0 + vw).attr('width', Math.max(0, mmW - x0 - vw));
   }
 
   /* ================= 平滑定位（搜索/深链/回位/键盘平移） ================= */
@@ -946,7 +864,7 @@
     init() {
       if (inited) return;
       inited = true;
-      onResize();          // 含 layout→prepareData(按当前来源模式,可能来自深链/本地存储)→build→buildMinimap
+      onResize();          // 含 layout→prepareData(按当前来源模式,可能来自深链/本地存储)→build
       buildFilters();
       // 拖动窗口边框时 resize 连发几十次，防抖后再做全量重建（单次约 70ms）
       let resizeTimer = null;
@@ -963,7 +881,7 @@
       if (params && params.focus) this.focusDone !== params.focus &&
         (this.focusDone = params.focus, window.TL.focusYear(+params.focus + 0.5));
     },
-    /* 来源切换:重排数据 + 重建长卷与缩略图(prepareData 依赖 layout 分区) */
+    /* 来源切换:重排数据 + 重建长卷(prepareData 依赖 layout 分区) */
     onSourceChange() {
       if (!inited) return;             // 未 init 时由 init 按当前模式构建
       onResize();
@@ -979,6 +897,5 @@
     state.panY = clampPanY(state.panY);
     prepareData();         // 依赖 layout 分区(卡道数/标签道数随视口高度变化)
     build();
-    buildMinimap();
   }
 })();
