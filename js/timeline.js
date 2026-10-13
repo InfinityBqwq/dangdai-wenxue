@@ -696,12 +696,52 @@
       <div class="fl-hint">洪子诚/比对模式:洪年表按月聚合为轴下密度柱(柱高∝当月条数,止于 2000);洪模式里程碑为大卡,比对模式为轨上锚点;朱栋霖大事记提要式,至 2018。长卷右端预留空白,可向未来延伸。</div>
       <div class="fl-hint">左右拖动浏览长卷 · 滚轮放大 → 聚焦中心事件</div>
       </div>`;
-    box.querySelector('.fl-toggle').addEventListener('click', () => box.classList.toggle('collapsed'));
+    box.querySelector('.fl-toggle').addEventListener('click', () => {
+      box.classList.toggle('collapsed');
+      if (box.classList.contains('collapsed')) box.style.height = '';   // 收起时不留空壳
+      else if (!box.style.height) {
+        try { const s = JSON.parse(localStorage.getItem(SIZE_KEY) || 'null');
+          if (s && s.h) box.style.height = s.h + 'px'; } catch (_) { /* 忽略 */ }
+      }
+    });
     box.querySelectorAll('input[type=checkbox]').forEach(cb =>
       cb.addEventListener('change', () => {
         filterState[cb.dataset.key] = cb.checked;
         applyFilters();
       }));
+
+    /* 左下角拉伸把手:自由调宽高,尺寸记忆在 localStorage;双击复位 */
+    const SIZE_KEY = 'tl-filters-size';
+    try {
+      const saved = JSON.parse(localStorage.getItem(SIZE_KEY) || 'null');
+      if (saved && saved.w) {
+        box.style.width = Math.min(saved.w, window.innerWidth - 24) + 'px';
+        if (saved.h) box.style.height = Math.min(saved.h, window.innerHeight - 90) + 'px';
+      }
+    } catch (_) { /* 忽略 */ }
+    const grip = document.createElement('div');
+    grip.className = 'fl-grip';
+    grip.title = '拖拽调整大小 · 双击复位';
+    box.appendChild(grip);
+    grip.addEventListener('mousedown', e => {
+      e.preventDefault(); e.stopPropagation();
+      const r = box.getBoundingClientRect();
+      const onMove = ev => {
+        box.style.width = Math.max(170, Math.min(640, r.right - ev.clientX)) + 'px';
+        box.style.height = Math.max(46, Math.min(window.innerHeight - 90, r.bottom - ev.clientY)) + 'px';
+      };
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        try { localStorage.setItem(SIZE_KEY, JSON.stringify({ w: box.offsetWidth, h: box.offsetHeight })); } catch (_) { /* 忽略 */ }
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    });
+    grip.addEventListener('dblclick', () => {
+      box.style.width = ''; box.style.height = '';
+      try { localStorage.removeItem(SIZE_KEY); } catch (_) { /* 忽略 */ }
+    });
   }
 
   /* ================= 平滑定位（搜索/深链/回位/键盘平移） ================= */
