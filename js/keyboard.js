@@ -1,12 +1,14 @@
 /* ============================================================
    keyboard.js — 全站快捷键
    ------------------------------------------------------------
-   全局   1/2/3/4 切换视图 · Ctrl+K 或 / 搜索 · ? 帮助 · Esc 逐层关闭
+   全局   1-5 切换视图 · Ctrl+K 或 / 搜索 · ? 帮助 · Esc 逐层关闭
    时间轴 ←/→ 平移(Shift×4) · ↑/↓ 或 +/- 缩放 · Home/End 首末年
           PgUp/PgDn 时期跳转 · [ / ] 上/下一里程碑(自动聚焦)
           O 全览
    地图   ←/→ 年份±1(Shift×5) · Space 播放/暂停 · Home/End 首末年
    图谱   方向键平移 · +/- 缩放 · 0 复位 · R 重新布局
+   拼图   方向键平移(Shift×4) · +/- 缩放 · 0/F 适应 · Del 删选中
+          N 便签 · G 分组框
    ============================================================ */
 (function () {
   'use strict';
@@ -21,7 +23,7 @@
   let helpEl = null;
   const GROUPS = [
     ['全局', [
-      ['1 2 3 4', '切换 时间轴 / Wiki / 图谱 / 地图'],
+      ['1 - 5', '切换 时间轴 / Wiki / 图谱 / 地图 / 拼图'],
       ['S', '切换编年 朱栋霖 / 洪子诚 / 双轨比对'],
       ['Ctrl K 或 /', '全局搜索'],
       ['Esc', '逐层关闭（帮助 → 浮层 → 抽屉）'],
@@ -45,6 +47,14 @@
       ['+ −', '缩放'],
       ['0', '复位视图'],
       ['R', '重新布局'],
+    ]],
+    ['拼图', [
+      ['方向键', '平移画布（Shift 加速）'],
+      ['+ −', '缩放'],
+      ['0 / F', '适应全部内容'],
+      ['Del', '删除选中的卡片 / 连线 / 分组框'],
+      ['N', '加便签'],
+      ['G', '加分组框'],
     ]],
   ];
 
@@ -85,6 +95,8 @@
     }
     const drawer = document.getElementById('drawer');
     if (drawer.classList.contains('open')) { drawer.classList.remove('open'); return true; }
+    // 拼图白板：取消连线拖拽 / 取消选中
+    if (window.getView && window.getView() === 'puzzle' && window.PUZZLE && window.PUZZLE.esc()) return true;
     if (document.activeElement && document.activeElement.tagName === 'INPUT') document.activeElement.blur();
     return false;
   }
@@ -136,6 +148,23 @@
     return false;
   }
 
+  function routePuzzle(e) {
+    const P = window.PUZZLE; if (!P) return false;
+    switch (e.key) {
+      case 'ArrowLeft': P.panBy(e.shiftKey ? 320 : 80, 0); return true;
+      case 'ArrowRight': P.panBy(e.shiftKey ? -320 : -80, 0); return true;
+      case 'ArrowUp': P.panBy(0, e.shiftKey ? 320 : 80); return true;
+      case 'ArrowDown': P.panBy(0, e.shiftKey ? -320 : -80); return true;
+      case '+': case '=': P.zoomBy(1.25); return true;
+      case '-': case '_': P.zoomBy(0.8); return true;
+      case '0': case 'f': case 'F': case 'Home': P.fit(); return true;
+      case 'Delete': case 'Backspace': return P.del();
+      case 'n': case 'N': P.addNote(); return true;
+      case 'g': case 'G': P.addGroup(); return true;
+    }
+    return false;
+  }
+
   /* ---------------- 总入口 ---------------- */
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') { if (handleEsc()) e.preventDefault(); return; }
@@ -152,8 +181,8 @@
       e.preventDefault(); return;
     }
     // 视图切换
-    if (['1', '2', '3', '4'].includes(e.key)) {
-      const v = ['timeline', 'wiki', 'graph', 'map'][+e.key - 1];
+    if (['1', '2', '3', '4', '5'].includes(e.key)) {
+      const v = ['timeline', 'wiki', 'graph', 'map', 'puzzle'][+e.key - 1];
       window.switchView(v);
       e.preventDefault(); return;
     }
@@ -167,7 +196,8 @@
     const handled =
       view === 'timeline' ? routeTimeline(e) :
       view === 'map' ? routeMap(e) :
-      view === 'graph' ? routeGraph(e) : false;
+      view === 'graph' ? routeGraph(e) :
+      view === 'puzzle' ? routePuzzle(e) : false;
     if (handled) e.preventDefault();
   });
 

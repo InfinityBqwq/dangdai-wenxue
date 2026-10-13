@@ -202,6 +202,7 @@
       <button data-act="wiki" data-name="${esc(name)}">📖 Wiki 阅读</button>
       <button data-act="graph" data-name="${esc(name)}">🕸 图谱查看</button>
       ${kind !== 'note' ? `<button data-act="locate" data-name="${esc(name)}">🗺 地图定位</button>` : ''}
+      <button data-act="puzzle" data-add="${esc(name)}">🧩 加入拼图</button>
       <button data-act="obsidian" data-uri="${esc(obsidianUri)}">✎ Obsidian 打开</button>`;
   }
 
@@ -434,7 +435,8 @@
     $('#drawer-actions').innerHTML = `
       ${wikiNames.map(n => `<button data-act="wiki" data-name="${esc(n)}">📖 Wiki · ${esc(n)}</button>`).join('')}
       <button data-act="search-name" data-name="${esc(evName)}">🔍 搜索相关卡片</button>
-      <button data-act="graph" data-name="${esc(evName)}">🕸 图谱查看</button>`;
+      <button data-act="graph" data-name="${esc(evName)}">🕸 图谱查看</button>
+      <button data-act="puzzle" data-addev="${esc(ev.id)}">🧩 加入拼图</button>`;
     swapDrawer();
     drawer.classList.add('open');
   }
@@ -485,6 +487,10 @@
     }
     else if (act === 'graph') { switchView('graph', { node: name }); }
     else if (act === 'locate') { switchView('map', { person: name }); }
+    else if (act === 'puzzle') {           // 上拼图白板:词条按名,编年事件按 id
+      drawer.classList.remove('open');
+      switchView('puzzle', btn.dataset.add ? { add: btn.dataset.add } : { addev: btn.dataset.addev });
+    }
     else if (act === 'obsidian') { window.open(btn.dataset.uri, '_blank'); }
   });
   $('#drawer .drawer-close').addEventListener('click', () => drawer.classList.remove('open'));
@@ -511,6 +517,7 @@
       ${anchor ? `<button class="btn" data-act="timeline" data-year="${Math.round(anchor)}">⇲ 时间轴定位</button>` : ''}
       <button class="btn" data-act="graph" data-name="${esc(item.name)}">🕸 图谱查看关联</button>
       ${item.type !== 'note' ? `<button class="btn" data-act="locate" data-name="${esc(item.name)}">🗺 地图定位</button>` : ''}
+      <button class="btn" data-act="puzzle" data-add="${esc(item.name)}">🧩 加入拼图</button>
       <button class="btn" data-act="obsidian" data-uri="${esc(obsidianUri)}">✎ Obsidian 打开</button>`;
   };
 

@@ -186,6 +186,7 @@
       if (act === 'timeline') window.switchView('timeline', { focus: +btn.dataset.year });
       else if (act === 'graph') window.switchView('graph', { node: item.name });
       else if (act === 'locate') window.switchView('map', { person: item.name });
+      else if (act === 'puzzle') window.switchView('puzzle', { add: item.name });
       else if (act === 'obsidian') window.open(btn.dataset.uri, '_blank');
     });
     // 正文换装淡入

@@ -50,6 +50,7 @@
   const CARD_H = 38, CARD_GAP = 12, CARD_CHARS = 16;
   const cardW = t => [...t].length * 14 + 26;
   const MINOR_CHARS = 14;
+  const MINOR_LANES = 5;   // 次要标签道数(layout 的 zoneMinor 与 prepareData 共用)
 
   const filterState = { event: true, policy: true, work: true, person: true, band: true };
   const kindOK = d => d.kind === 'event' ? filterState.event : d.kind === 'policy' ? filterState.policy : filterState.work;
@@ -68,24 +69,29 @@
     }
     return ev.src === 'zhu' || ev.src === 'curated';       // zhu(默认)
   };
-  /* 比对模式下洪子诚年表整体移到主轴下方作点轨(_lane=-2) */
-  const hongBelow = () => srcMode() === 'compare';
+  /* 洪子诚年表密度轨:洪模式与比对模式均在主轴下方(_lane=-2);
+     比对模式另将洪侧里程碑降为轨上锚点(上方卡区让给朱版) */
+  const hongTrack = () => srcMode() !== 'zhu';
+  const hongAnchor = () => srcMode() === 'compare';
   const HONG_TRACK_Y = () => axisY + 46;
 
   let majors = [], minors = [];
   const personsByPeriod = new Map(CFG.periods.map(p => [p.id, []]));
 
   function prepareData() {
-    for (const ev of D.events) { delete ev._lane; delete ev._t; delete ev._w; delete ev._x; delete ev._label; }
+    for (const ev of D.events) { delete ev._lane; delete ev._t; delete ev._w; delete ev._x; delete ev._tx; delete ev._dotX; delete ev._dotRow; delete ev._col; delete ev._label; }
     const evs = D.events.filter(eventVisible);
     majors = evs.filter(e => e.priority === 1)
       .sort((a, b) => a.year - b.year || (a.month || 6) - (b.month || 6));
-    if (hongBelow()) majors = majors.filter(e => e.src !== 'hong');   // 比对模式:洪侧里程碑以轨下锚点呈现,不挤上方卡区
+    if (hongAnchor()) majors = majors.filter(e => e.src !== 'hong');   // 比对模式:洪侧里程碑以轨下锚点呈现,不挤上方卡区
     minors = evs.filter(e => e.priority !== 1)
       .sort((a, b) => a.year - b.year || (a.month || 6) - (b.month || 6));
 
-    // 主要事件卡:5 道贪心(文档坐标)
+    // 主要事件卡:道数贪心(文档坐标)。道数随视口高度在 layout() 动态给定
+    // (矮窗口 3 道),超出 zoneMajor.lanes 的溢出卡只留轴上圆点——
+    // 硬编码 5 道会在矮窗口把卡片挤进次要标签区(实测重叠)。
     {
+      const mlanes = (zoneMajor && zoneMajor.lanes) || 5;   // 模块级首跑(未 layout)兜底 5
       const laneRight = [];
       for (const ev of majors) {
         const t = trunc(ev.title || ev.label, CARD_CHARS);
@@ -93,28 +99,46 @@
         const X = docX(eventYear(ev));
         const cardX = Math.max(8, Math.min(X - 10, stripW - w - 8));
         let lane = -1;
-        for (let li = 0; li < 5; li++) {
+        for (let li = 0; li < mlanes; li++) {
           if (!laneRight[li] || cardX > laneRight[li] + CARD_GAP) { lane = li; break; }
         }
         if (lane >= 0) laneRight[lane] = cardX + w;
         Object.assign(ev, { _t: t, _w: w, _x: cardX, _lane: lane });
       }
     }
-    // 次要事件:4 道标签贪心,放不下的只留圆点;比对模式下洪轨只画点(-2 = 下方点轨)
+    // 次要事件:标签道贪心,放不下的只留圆点;洪轨事件只画轴下密度柱(-2)
     {
       const laneRight = [];
+      const dotEvs = [];
       for (const ev of minors) {
-        if (hongBelow() && ev.src === 'hong') { ev._lane = -2; continue; }
+        if (hongTrack() && ev.src === 'hong') { ev._lane = -2; continue; }
         const X = docX(eventYear(ev));
         const label = trunc(ev.label, MINOR_CHARS);
         const lw = [...label].length * 11 + 14;
         let lane = -1;
-        for (let li = 0; li < 4; li++) {
+        for (let li = 0; li < MINOR_LANES; li++) {
           if (!laneRight[li] || X + 7 > laneRight[li] + 10) { lane = li; break; }
         }
         if (lane >= 0) laneRight[lane] = X + 7 + lw;
-        Object.assign(ev, { _label: label, _lane: lane });
+        Object.assign(ev, { _label: label, _lane: lane, _tx: X });
+        dotEvs.push(ev);
       }
+      // 圆点统一防撞串珠(里程碑+次要):x 相近的点归入同列,列内自轴面
+      // 以 10px 间距向上堆叠;里程碑互让 10px(r5+r5),次要入列门槛 8.5px。
+      // (同年同月的点坐标完全相同,无此步会叠成一坨)
+      const cols = [];
+      for (const m of majors) {
+        const X = docX(eventYear(m));
+        let col = cols.find(c => Math.abs(c.x - X) < 10);
+        if (!col) { col = { x: X, n: 0, maj: true }; cols.push(col); }
+        m._dotX = col.x; m._dotRow = col.n++;
+      }
+      for (const ev of dotEvs) {
+        let col = cols.find(c => Math.abs(c.x - ev._tx) < 8.5);
+        if (!col) { col = { x: ev._tx, n: 0 }; cols.push(col); }
+        ev._dotX = col.x; ev._dotRow = col.n++; ev._col = col;
+      }
+      for (const c of cols) c.rows = c.n;
     }
     // 人物印章:按时期静态排列(策展名单,恒全量——词条不按编年口径拆分)
     for (const k of personsByPeriod.keys()) personsByPeriod.set(k, []);
@@ -291,36 +315,39 @@
       });
 
       /* ② 次要事件（静态：标签或仅圆点；g-minors 整组建档）
-         比对模式下洪子诚年表(_lane=-2)不进标签区,另行渲染为轴下点轨 */
+         圆点带防撞串珠:_dotX 为列锚 x、_dotRow 为列内层级(每级上移 10px);
+         洪/比对模式下洪子诚年表(_lane=-2)不进标签区,另行渲染为轴下密度轨 */
       const gMinors = gContent.append('g').attr('class', 'g-minors');
       gMinorsEl = gMinors.node();
       minorSel = gMinors.selectAll('.minor').data(minors.filter(ev => ev._lane !== -2)).join('g')
         .attr('class', 'minor').style('cursor', 'pointer');
       minorSel.each(function (ev) {
         const g = d3.select(this);
-        const X = docX(eventYear(ev));
+        const DX = ev._dotX ?? docX(eventYear(ev));      // 列锚 x(防撞后)
+        const rows = ev._col ? ev._col.rows : 1;
         const hasLabel = ev._lane >= 0;
-        const ly = zoneMinor.bottom - ev._lane * 15;
+        const ly = zoneMinor.bottom - ev._lane * zoneMinor.laneH;
         if (hasLabel) g.append('line')
-          .attr('x1', X).attr('x2', X).attr('y1', axisY - 6).attr('y2', ly + 4)
+          .attr('x1', DX).attr('x2', DX)
+          .attr('y1', axisY - (rows - 1) * 10 - 6).attr('y2', ly + 4)
           .attr('stroke', 'var(--ink-3)').attr('stroke-width', .8).attr('stroke-dasharray', '2,3');
         g.append('circle').attr('r', 3)
-          .attr('cx', X).attr('cy', axisY)
+          .attr('cx', DX).attr('cy', axisY - (ev._dotRow || 0) * 10)
           .attr('fill', kindColor(ev.kind)).attr('opacity', .85);
         if (hasLabel) g.append('text')
-          .attr('x', X + 7).attr('y', ly - 4)
+          .attr('x', DX + 7).attr('y', ly - 4)
           .attr('font-size', 11).attr('fill', 'var(--ink-2)')
           .attr('paint-order', 'stroke').attr('stroke', 'var(--paper-0)').attr('stroke-width', 3)
           .text(ev._label);
         g.append('title').text(ev.label + '（' + ev.year + '）');   // 原生悬停提示
       });
 
-      /* ②b 比对模式:洪子诚年表密度轨(轴下,赭橙)——
-         931 个逐条圆点在 46px/年 下会挤成实线,故按月聚合为密度细柱
-         (柱高∝当月条数,点击开当月首条),里程碑为大号锚点 */
-      const hongTrack = minors.filter(ev => ev._lane === -2);
-      const hongMajors = hongBelow() ? D.events.filter(ev => ev.src === 'hong' && ev.priority === 1) : [];
-      if (hongTrack.length || hongMajors.length) {
+      /* ②b 洪/比对模式:洪子诚年表密度轨(轴下,赭橙)——
+         900+ 逐条圆点在 46px/年 下会挤成实线,故按月聚合为密度细柱
+         (柱高∝当月条数,点击开当月首条),比对模式里程碑另作轨上大号锚点 */
+      const hongTrackEvs = minors.filter(ev => ev._lane === -2);
+      const hongMajors = hongAnchor() ? D.events.filter(ev => ev.src === 'hong' && ev.priority === 1) : [];
+      if (hongTrackEvs.length || hongMajors.length) {
         const ty = HONG_TRACK_Y();
         const tg = gMinors.append('g').attr('class', 'hong-track');
         tg.append('line').attr('class', 'hong-track-line')
@@ -328,7 +355,7 @@
           .attr('y1', ty).attr('y2', ty)
           .attr('stroke', 'var(--src-hong)').attr('stroke-opacity', .4);
         const byMonth = new Map();
-        for (const ev of hongTrack) {
+        for (const ev of hongTrackEvs) {
           const k = ev.year + '-' + (ev.month || 0);
           const cur = byMonth.get(k) || { y: ev.year, m: ev.month || 0, n: 0, first: ev };
           cur.n++;
@@ -359,7 +386,7 @@
           .attr('x', docX(1949)).attr('y', ty + 21)
           .attr('font-size', 10).attr('fill', 'var(--src-hong)')
           .attr('paint-order', 'stroke').attr('stroke', 'var(--paper-0)').attr('stroke-width', 3)
-          .text(`▼ 洪子诚年表 ${hongTrack.length} 条(逐月详编,止于 2000)· 柱高∝当月条数`);
+          .text(`▼ 洪子诚年表 ${hongTrackEvs.length} 条(逐月详编,止于 2000)· 柱高∝当月条数`);
       }
 
       /* ② 主要事件卡（静态） */
@@ -367,21 +394,22 @@
         .style('cursor', 'pointer');
       majorSel.each(function (ev) {
         const g = d3.select(this);
-        const X = docX(eventYear(ev));
+        const X = ev._dotX ?? docX(eventYear(ev));            // 串珠列锚 x(防撞后)
+        const dotY = axisY - (ev._dotRow || 0) * 10;          // 列内层级(10px/级)
         const hong = ev.src === 'hong';
         const accent = hong ? 'var(--src-hong)' : '#b3342e';   // 洪侧里程碑卡用洪源色
-        const below = hong && hongBelow();                     // 比对模式:洪侧锚点在轴下密度轨,不画轴上点
+        const below = hong && hongAnchor();                     // 比对模式:洪侧锚点在轴下密度轨,不画轴上点
         if (!below) {
           g.append('line')
             .attr('x1', X).attr('x2', X)
-            .attr('y1', axisY - 4)
-            .attr('y2', ev._lane >= 0 ? zoneMajor.top + ev._lane * zoneMajor.laneH + CARD_H + 2 : axisY - 10)
+            .attr('y1', dotY - 6)
+            .attr('y2', ev._lane >= 0 ? zoneMajor.top + ev._lane * zoneMajor.laneH + CARD_H + 2 : dotY - 12)
             .attr('stroke', accent).attr('stroke-width', 1).attr('stroke-dasharray', '3,4').attr('opacity', .4);
           g.append('circle').attr('r', 8)
-            .attr('cx', X).attr('cy', axisY)
+            .attr('cx', X).attr('cy', dotY)
             .attr('fill', accent).attr('opacity', .22).attr('filter', 'url(#ink-halo)');
           g.append('circle').attr('r', 5)
-            .attr('cx', X).attr('cy', axisY)
+            .attr('cx', X).attr('cy', dotY)
             .attr('fill', accent).attr('stroke', 'var(--paper-1)').attr('stroke-width', 1.5);
         }
         if (ev._lane >= 0) {
@@ -430,9 +458,9 @@
     axisY = Math.max(600, H * 0.8);
     zoneBand = { bottom: axisY - 6, laneH: 16, lanes: 3 };
     zoneSeal = { bottom: axisY - 10 - zoneBand.lanes * zoneBand.laneH - 6, rowH: 22 };
-    zoneMinor = { bottom: zoneSeal.bottom - 2 * zoneSeal.rowH - 8, lanes: 4 };
+    zoneMinor = { bottom: zoneSeal.bottom - 2 * zoneSeal.rowH - 8, lanes: MINOR_LANES, laneH: 15 };
     const majorTop = 258;
-    const majorBottom = zoneMinor.bottom - zoneMinor.lanes * 15 - 10;
+    const majorBottom = zoneMinor.bottom - zoneMinor.lanes * zoneMinor.laneH - 10;
     const lanes = Math.max(3, Math.min(5, Math.floor((majorBottom - majorTop) / 46)));
     zoneMajor = { top: majorTop, bottom: majorBottom, lanes, laneH: (majorBottom - majorTop) / lanes };
   }
@@ -495,8 +523,8 @@
           gFocusRing.classed('show', true);
           gFocusRing.select('rect').attr('display', 'none');
           gFocusRing.select('circle').attr('display', null)
-            .attr('cx', docX(eventYear(best)))
-            .attr('cy', best._lane === -2 ? HONG_TRACK_Y() : axisY)   // 比对模式:洪轨点在轴下
+            .attr('cx', best._dotX ?? docX(eventYear(best)))
+            .attr('cy', best._lane === -2 ? HONG_TRACK_Y() : axisY - (best._dotRow || 0) * 10)   // 串珠列内层级
             .attr('r', 10);
         }
         lastAutoTitle = best.title || best.label;
@@ -670,7 +698,7 @@
       <div>${periodDots}</div>
       <div class="fl-title" style="margin-top:8px">两史来源</div>
       <div>${srcDots}</div>
-      <div class="fl-hint">比对模式:轴下洪子诚年表按月聚合为密度柱(柱高∝当月条数,止于 2000),里程碑为大号锚点;<br>朱栋霖大事记提要式,至 2018。长卷右端预留空白,可向未来延伸。</div>
+      <div class="fl-hint">洪子诚/比对模式:洪年表按月聚合为轴下密度柱(柱高∝当月条数,止于 2000);洪模式里程碑为大卡,比对模式为轨上锚点;朱栋霖大事记提要式,至 2018。长卷右端预留空白,可向未来延伸。</div>
       <div class="fl-hint">左右拖动浏览长卷 · 滚轮放大 → 聚焦中心事件</div>
       </div>`;
     box.querySelector('.fl-toggle').addEventListener('click', () => box.classList.toggle('collapsed'));
@@ -918,8 +946,7 @@
     init() {
       if (inited) return;
       inited = true;
-      prepareData();       // 以当前来源模式(可能来自深链/本地存储)重排
-      onResize();          // 含 build() 与 buildMinimap()
+      onResize();          // 含 layout→prepareData(按当前来源模式,可能来自深链/本地存储)→build→buildMinimap
       buildFilters();
       // 拖动窗口边框时 resize 连发几十次，防抖后再做全量重建（单次约 70ms）
       let resizeTimer = null;
@@ -936,10 +963,9 @@
       if (params && params.focus) this.focusDone !== params.focus &&
         (this.focusDone = params.focus, window.TL.focusYear(+params.focus + 0.5));
     },
-    /* 来源切换:重排数据 + 重建长卷与缩略图 */
+    /* 来源切换:重排数据 + 重建长卷与缩略图(prepareData 依赖 layout 分区) */
     onSourceChange() {
       if (!inited) return;             // 未 init 时由 init 按当前模式构建
-      prepareData();
       onResize();
     },
   };
@@ -951,6 +977,7 @@
     state.zoom = Math.max(minZoom(), Math.min(MAX_Z, state.zoom));
     state.pan = clampPan(state.pan);
     state.panY = clampPanY(state.panY);
+    prepareData();         // 依赖 layout 分区(卡道数/标签道数随视口高度变化)
     build();
     buildMinimap();
   }

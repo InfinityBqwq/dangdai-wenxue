@@ -96,6 +96,17 @@ window.APP_CONFIG = {
   /* ---------- 地图默认中心 ---------- */
   map: { center: [104.5, 36.2], zoom: 4 },
 
+  /* ---------- 拼图白板 ---------- */
+  puzzle: {
+    grid: 24,                                  // 点阵背景间距（世界像素）
+    zoomMin: 0.25, zoomMax: 3,                 // 画布缩放范围
+    cardMin: { w: 130, h: 64 },                // 卡片最小尺寸
+    cardSize: {                                // 各类卡片默认尺寸 [宽, 高]
+      entity: [220, 120], event: [210, 104], note: [180, 130],
+    },
+    groupSize: [340, 220],                     // 分组框默认尺寸
+  },
+
   /* ---------- Obsidian 库路径（生成 obsidian:// URI 用） ---------- */
   obsidianVault: 'MARKING',
 };

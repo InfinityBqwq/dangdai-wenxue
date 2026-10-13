@@ -27,6 +27,7 @@
     <button data-view="wiki">Wiki</button>
     <button data-view="graph">图谱</button>
     <button data-view="map">地图</button>
+    <button data-view="puzzle">拼图</button>
   </nav>
   <div class="spacer"></div>
   <button id="help-btn" title="快捷键（按 ? 呼出）">⌨ 快捷键</button>
@@ -78,6 +79,25 @@
       <button id="map-play" title="播放">▶</button>
     </div>
   </section>
+
+  <!-- 拼图白板：左侧卡片库 + 无限画布（内容由 js/puzzle.js 构建） -->
+  <section id="view-puzzle" class="view">
+    <button id="pz-lib-btn" title="卡片库">☰ 卡片库</button>
+    <aside id="pz-library"></aside>
+    <div id="pz-viewport">
+      <div id="pz-empty">
+        <div class="pz-empty-title">拼 图 白 板</div>
+        <div class="pz-empty-row">① 从左侧卡片库拖词条 / 编年事件上板</div>
+        <div class="pz-empty-row">② 卡片边缘圆点拖出连线（线型 · 箭头 · 颜色 · 标签）</div>
+        <div class="pz-empty-row">③ 双击空白加便签 · ▣ 建分组框圈住一组卡片</div>
+        <div class="pz-empty-tip">拖动平移 · 滚轮缩放 · 内容自动保存</div>
+      </div>
+      <div id="pz-toolbar"></div>
+      <div id="pz-stylebar"></div>
+      <div id="pz-undo"><span class="pz-undo-msg"></span><button>撤销</button></div>
+      <div id="pz-hint">拖动平移 · 滚轮缩放 · 卡片圆点连线 · 双击空白加便签</div>
+    </div>
+  </section>
 </main>
 
 <!-- 详情抽屉 -->
@@ -105,6 +125,7 @@
 <script src="js/wiki.js"></script>
 <script src="js/graph.js"></script>
 <script src="js/map.js"></script>
+<script src="js/puzzle.js"></script>
 <script src="js/keyboard.js"></script>
 <!-- echarts 与中国 GeoJSON(共 1.6MB)不随首屏加载:首次切到地图视图时由 map.js 按需注入 -->
 <script>
