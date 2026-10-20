@@ -10,7 +10,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
 
-const VAULT = 'D:/Doc/Vault/MARKING/中国文学史';
+// 多机适配：候选根里挑第一个存在 wiki/ 的（不同电脑 Vault 挂载位置不同）
+const VAULT = ['D:/Doc/Vault/MARKING/中国文学史', 'D:/Vault/MARKING/中国文学史']
+  .find(p => fs.existsSync(path.join(p, 'wiki')));
+if (!VAULT) { console.error('✗ 未找到 Vault 数据源（候选路径均无 wiki/ 目录）'); process.exit(1); }
 const HERE = path.dirname(url.fileURLToPath(import.meta.url));
 const OUT_FILE = path.join(HERE, '..', 'js', 'data.js');
 
