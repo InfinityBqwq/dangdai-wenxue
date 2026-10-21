@@ -1,21 +1,74 @@
-import { motion } from 'motion/react'
-
 /**
- * v2 外壳占位：仅证明 React 18 + motion + 设计令牌 + 数据管线均已接通，
- * 外壳阶段（计划书阶段 2）会整体重写，勿在此累积真实 UI。
+ * App.tsx — 全局外壳
+ * ------------------------------------------------------------
+ * 装配：Curtain（开幕卷轴）→ TopBar → ViewHost（五岛 keep-alive）→
+ * Drawer / CommandPalette / HelpOverlay / Toast 浮层组。
+ * 初始化：兼容全局名 + hash 路由（load & hashchange）+ 键盘集中分发 + wikilink 事件委托。
+ * 勿用 React.StrictMode：引擎为命令式挂载，避免 dev 下双初始化。
  */
+import { useEffect } from 'react'
+import { MotionConfig } from 'motion/react'
+import { AppContext, useAppState, setSource } from './shell/state'
+import { installGlobals } from './shell/globals'
+import { initRouter } from './shell/router'
+import { initKeyboard } from './shell/keyboard'
+import { openDrawerEvent, openWikiPage, resolveName, toast } from './shell/api'
+import { eventById } from './shell/indexes'
+import Curtain from './shell/Curtain'
+import TopBar from './shell/TopBar'
+import ViewHost from './shell/views/ViewHost'
+import Drawer from './shell/Drawer'
+import CommandPalette from './shell/CommandPalette'
+import HelpOverlay from './shell/HelpOverlay'
+import ToastStack from './shell/Toast'
+
 export default function App() {
+  const app = useAppState()
+  // Context 值：路由快照 + 来源切换入口
+  const ctx = { view: app.view, params: app.params, source: app.source, setSource }
+
+  useEffect(() => {
+    installGlobals()
+    initRouter()
+    const offKeyboard = initKeyboard()
+
+    // 抽屉/正文中 wikilink 点击 + 编年条目交叉引用（app.js 事件委托原样移植）
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null
+      if (!t || !(t instanceof Element)) return
+      const cx = t.closest('[data-cross]')
+      if (cx) {
+        const ev = eventById().get((cx as HTMLElement).dataset.cross || '')
+        if (ev) openDrawerEvent(ev)
+        return
+      }
+      const wl = t.closest('.wikilink')
+      if (wl) {
+        const name = (wl as HTMLElement).dataset.target || ''
+        const canon = resolveName(name)
+        if (canon) openWikiPage(canon)
+        else toast('知识库中没有这张卡片：' + name)
+      }
+    }
+    document.addEventListener('click', onClick)
+
+    return () => {
+      offKeyboard()
+      document.removeEventListener('click', onClick)
+    }
+  }, [])
+
   return (
-    <motion.main
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: 'easeOut' }}
-      style={{ padding: '48px 24px', color: 'var(--ink-1)', fontFamily: 'var(--font-body)' }}
-    >
-      <h1 style={{ fontFamily: 'var(--font-brush)', color: 'var(--ink-0)' }}>
-        中国当代文学史 · 数字长卷
-      </h1>
-      <p>v2 脚手架就绪：Vite + React 18 + TypeScript + motion；数据经 src/data/store.ts（window.DATA / window.APP_CONFIG）接通。</p>
-    </motion.main>
+    <MotionConfig reducedMotion="user">
+      <AppContext.Provider value={ctx}>
+        <Curtain />
+        <TopBar />
+        <ViewHost />
+        <Drawer />
+        <CommandPalette />
+        <HelpOverlay />
+        <ToastStack />
+      </AppContext.Provider>
+    </MotionConfig>
   )
 }

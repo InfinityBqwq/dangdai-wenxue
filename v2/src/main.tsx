@@ -1,11 +1,8 @@
-import React from 'react'
+import './data/store' // 必须最先：副作用引入接通 window.DATA / window.APP_CONFIG，Shell 初始化依赖
+import './styles/tokens.css'
+import './styles/shell.css'
 import ReactDOM from 'react-dom/client'
 import App from './App'
-import './styles/tokens.css'
-import './data/store' // 副作用引入：js/data.js → window.DATA；js/config.js → window.APP_CONFIG
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-)
+// 勿加 React.StrictMode：引擎为命令式挂载，dev 双调用会二次初始化（见任务约定）
+ReactDOM.createRoot(document.getElementById('root')!).render(<App />)
