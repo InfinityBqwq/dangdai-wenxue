@@ -32,20 +32,16 @@ export function serializeHash(view: string, params: Params): string {
 }
 
 /**
- * 切换视图（旧版 switchView 原样移植）：
- * 先写 hash，再通知视图模块（旧版 window.Views.init/onShow 协议保留，
- * 供后续引擎移植代码原样注册），最后落地 React 状态。
+ * 切换视图（旧版 switchView 移植；onShow 投递单路化）：
+ * 先写 hash，再落地 React 状态。不再直发 window.Views[view].init/onShow——
+ * 五岛统一由包装层订阅路由（useViewParams → 引擎 onShow）单路驱动；旧路直发
+ * 会在 150ms 切场节拍内（section 尚 display:none、盒 0×0）打进引擎，造成
+ * graph 画布 0 尺寸重排 / map resize 告警 / focus 双排程，与岛订阅叠加成双路。
+ * window.Views 注册表本身保留（引擎兼容全局与键盘层不动）。
  */
 export function switchView(view: ViewId, params: Params = {}): void {
   const newHash = serializeHash(view, params)
   if (location.hash !== newHash) history.replaceState(null, '', newHash)
-  const w = window as any
-  const mod = (w.Views || {})[view]
-  if (mod && !mod._inited) {
-    if (typeof mod.init === 'function') mod.init()
-    mod._inited = true
-  }
-  if (mod && typeof mod.onShow === 'function') mod.onShow(params)
   applyRoute(view, params)
 }
 

@@ -1,0 +1,86 @@
+/* ============================================================
+   graph.css — 图谱视图样式
+   ------------------------------------------------------------
+   从旧版 css/main.css「图谱视图」分节（589-657 行）与响应式分节
+   （≤640px 的图谱相关行）原样拷贝；选择器一律保持原名
+   （引擎 buildToolbar/buildForcePanel 与骨架 id/class 依赖）。
+   变量只引用 tokens.css 令牌。
+   ============================================================ */
+
+/* ============ 图谱视图 ============ */
+#view-graph { overflow: hidden; }
+#graph-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+#graph-toolbar {
+  position: absolute; top: 14px; left: 16px; z-index: 10;
+  display: flex; flex-wrap: wrap; gap: 6px;
+  max-width: 620px;
+}
+#graph-toolbar .gchip {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--paper-edge);
+  background: color-mix(in srgb, var(--paper-1) 88%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--ink-2); font-size: 12.5px;
+  padding: 5px 11px; border-radius: 15px;
+  transition: all var(--dur-fast);
+  user-select: none;
+}
+#graph-toolbar .gchip:hover { border-color: var(--ink-3); }
+#graph-toolbar .gchip.on { color: #fff; border-color: transparent; }
+#graph-toolbar .gchip .dot { width: 8px; height: 8px; border-radius: 50%; }
+#graph-hint {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  font-size: 12px; color: var(--ink-3); letter-spacing: 1px;
+  background: color-mix(in srgb, var(--paper-1) 85%, transparent);
+  padding: 5px 16px; border-radius: 14px;
+  border: 1px solid var(--paper-edge);
+  pointer-events: none; z-index: 10;
+}
+
+/* 力度调节面板(右上角,可折叠) */
+#graph-forces {
+  position: absolute; top: 14px; right: 16px; z-index: 10;
+  width: 224px;
+  background: color-mix(in srgb, var(--paper-1) 90%, transparent);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-paper);
+  backdrop-filter: blur(6px);
+  padding: 9px 12px 10px;
+  box-shadow: 0 2px 10px var(--paper-shadow);
+}
+#graph-forces .gf-title {
+  font-size: 12px; color: var(--ink-3); letter-spacing: 2px;
+  cursor: pointer; user-select: none;
+}
+#graph-forces .gf-title:hover { color: var(--ink-1); }
+#graph-forces .gf-arrow { display: inline-block; transition: transform var(--dur-fast); }
+#graph-forces.collapsed .gf-arrow { transform: rotate(-90deg); }
+#graph-forces.collapsed .gf-body { display: none; }
+#graph-forces .gf-row {
+  display: flex; align-items: center; gap: 7px;
+  margin: 7px 0 3px; font-size: 12px; color: var(--ink-1);
+}
+#graph-forces .gf-row:hover .gf-label { color: var(--ink-0); }
+#graph-forces .gf-label { width: 64px; flex: none; }
+#graph-forces .gf-row input[type=range] { flex: 1; min-width: 0; accent-color: var(--cinnabar); height: 4px; }
+#graph-forces .gf-val { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); width: 32px; text-align: right; }
+#graph-forces .gf-reset {
+  margin-top: 8px; width: 100%;
+  border: 1px solid var(--paper-edge); background: var(--paper-2);
+  color: var(--ink-2); font-size: 11.5px; padding: 4px 0;
+  border-radius: var(--radius-paper); letter-spacing: 1px;
+  transition: all var(--dur-fast);
+}
+#graph-forces .gf-reset:hover { border-color: var(--cinnabar); color: var(--cinnabar); }
+#graph-forces .gf-hint {
+  font-size: 10.5px; color: var(--ink-3); line-height: 1.6;
+  margin-top: 7px; border-top: 1px dashed var(--paper-edge); padding-top: 6px;
+}
+
+/* 窄屏（≤640px）：工具栏换行限制、力度面板宽度自适应（默认折叠由 JS 处理） */
+@media (max-width: 640px) {
+  #graph-toolbar { max-width: calc(100vw - 60px); }
+  #graph-forces { width: auto; max-width: 52vw; }
+  #graph-forces .gf-label { width: 58px; }
+  #graph-hint { display: none; }
+}

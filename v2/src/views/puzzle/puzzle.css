@@ -1,0 +1,381 @@
+/* ============================================================
+   puzzle.css — 拼图白板视图样式
+   ------------------------------------------------------------
+   从旧版 css/main.css「拼图白板视图」分节（747-1054 行）与响应式
+   分节（≤640px 的拼图相关行 1197-1219）原样拷贝；选择器一律保持
+   原名（引擎按这些 id/class 取元素与挂状态）。变量只引用 tokens.css
+   令牌。#view-puzzle.active 的 flex 布局 shell.css 已有同款声明，此处
+   保留一份与旧版分节一致（幂等）。
+   文末「v2 动效新增」三块（上板落地弹簧 / 连线描线生长 / 卡片库
+   分组展开 stagger）全部只动 transform/opacity（落地阴影收敛为计划书
+   明确点名）；reduced-motion 由 shell.css 全局降级块直跳终态。
+   ============================================================ */
+
+/* ============ 拼图白板视图 ============ */
+#view-puzzle.active { display: flex; }
+#pz-lib-btn { display: none; }
+
+/* ---- 左侧卡片库 ---- */
+#pz-library {
+  width: var(--sidebar-w); flex-shrink: 0;
+  border-right: 1px solid var(--paper-edge);
+  background: color-mix(in srgb, var(--paper-1) 60%, transparent);
+  display: flex; flex-direction: column;
+  user-select: none;
+}
+#pz-library .pz-lib-head {
+  padding: 14px 16px 8px;
+  font-family: var(--font-brush); font-size: 16px;
+  color: var(--ink-0); letter-spacing: 2px;
+  border-bottom: 1px solid var(--ink-wash);
+}
+#pz-library .pz-lib-search { padding: 10px 12px 6px; }
+#pz-library .pz-lib-search input {
+  width: 100%; border: 1px solid var(--paper-edge); border-radius: var(--radius-paper);
+  background: var(--paper-2); color: var(--ink-0); font-size: 13px;
+  padding: 6px 10px; outline: none;
+}
+#pz-library .pz-lib-search input:focus { box-shadow: 0 0 0 2px var(--cinnabar-soft); }
+#pz-lib-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 12px 8px; }
+.pz-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--paper-edge); background: transparent;
+  color: var(--ink-3); font-size: 11.5px;
+  padding: 2.5px 9px; border-radius: 12px;
+  transition: all var(--dur-fast);
+}
+.pz-chip i { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
+.pz-chip:hover { color: var(--ink-1); border-color: var(--ink-3); }
+.pz-chip.on { color: var(--ink-0); background: var(--paper-2); border-color: var(--ink-3); }
+#pz-lib-list { flex: 1; overflow-y: auto; padding: 4px 6px 30px; }
+.pz-lg { margin: 2px 0; }
+.pz-lg-head {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 8px; cursor: pointer; user-select: none;
+  font-size: 13px; color: var(--ink-2); border-radius: 3px;
+}
+.pz-lg-head:hover { background: var(--paper-2); }
+.pz-lg-head > span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pz-lg-head .dot { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.pz-lg-head .count { font-size: 10.5px; color: var(--ink-4); }
+.pz-lg-head .arrow { font-size: 9px; color: var(--ink-4); transition: transform var(--dur-fast); }
+.pz-lg.open > .pz-lg-head .arrow { transform: rotate(90deg); }
+.pz-lg-body { display: none; }
+.pz-lg.open > .pz-lg-body { display: block; }
+.pz-li {
+  display: flex; align-items: baseline; gap: 6px;
+  width: 100%; text-align: left;
+  border: none; background: transparent; cursor: grab;
+  padding: 3.5px 8px 3.5px 23px; border-radius: 3px;
+}
+.pz-li:hover { background: var(--paper-2); }
+.pz-li-title { flex: 1; min-width: 0; font-size: 12.5px; color: var(--ink-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pz-li:hover .pz-li-title { color: var(--ink-0); }
+.pz-li-meta { font-family: var(--font-mono); font-size: 10px; color: var(--ink-4); flex: none; }
+.pz-li-on { display: none; font-size: 8px; color: var(--cinnabar); flex: none; }
+.pz-li.onboard .pz-li-on { display: inline; }
+.pz-lib-foot {
+  padding: 8px 14px; font-size: 10.5px; color: var(--ink-4); line-height: 1.75;
+  border-top: 1px dashed var(--paper-edge);
+}
+/* 库拖拽跟随影 */
+.pz-ghost {
+  position: fixed; z-index: var(--z-modal); pointer-events: none;
+  display: flex; align-items: baseline; gap: 6px;
+  background: var(--paper-1); border: 1px solid var(--cinnabar);
+  box-shadow: 0 6px 20px var(--paper-shadow);
+  padding: 6px 12px; border-radius: 4px; opacity: .94;
+}
+
+/* ---- 无限画布 ---- */
+#pz-viewport {
+  flex: 1; position: relative; overflow: hidden;
+  cursor: grab; touch-action: none; user-select: none;
+  background-color: var(--paper-0);
+  background-image: radial-gradient(color-mix(in srgb, var(--ink-3) 42%, transparent) 1px, transparent 1.2px);
+}
+#pz-viewport.dragging { cursor: grabbing; }
+#pz-viewport.drop::after {
+  content: ''; position: absolute; inset: 0; z-index: 20;
+  box-shadow: inset 0 0 0 2px var(--cinnabar);
+  pointer-events: none;
+}
+#pz-board { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; will-change: transform; }
+#pz-groups { position: absolute; z-index: 1; }
+#pz-edges { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; z-index: 2; }
+#pz-cards { position: absolute; z-index: 3; }
+
+/* ---- 分组框 ---- */
+.pz-group {
+  position: absolute;
+  border: 1.5px dashed color-mix(in srgb, var(--ink-2) 42%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ink-2) 4%, transparent);
+}
+.pz-group.sel { border-color: var(--cinnabar); background: color-mix(in srgb, var(--cinnabar) 4%, transparent); }
+.pz-g-title {
+  position: absolute; top: -12px; left: 10px;
+  max-width: 65%; min-width: 46px;
+  background: var(--paper-1);
+  border: 1px dashed color-mix(in srgb, var(--ink-2) 42%, transparent);
+  border-radius: 3px; padding: 1px 9px;
+  font-family: var(--font-brush); font-size: 12.5px; color: var(--ink-2);
+  outline: none; cursor: text; user-select: text;
+  white-space: nowrap; overflow: hidden;
+}
+.pz-group.sel .pz-g-title { border-color: var(--cinnabar); color: var(--cinnabar); }
+.pz-g-title:empty::before { content: attr(data-ph); color: var(--ink-4); }
+.pz-g-title:focus { min-width: 90px; white-space: normal; }
+
+/* ---- 连线 ---- */
+.pz-l-hit { fill: none; stroke: transparent; pointer-events: stroke; cursor: pointer; }
+.pz-l-line { fill: none; stroke: var(--ink-2); stroke-width: 2; pointer-events: none; transition: stroke var(--dur-fast); }
+.pz-link:hover .pz-l-line { stroke: var(--ink-0); }
+.pz-link.sel .pz-l-line { stroke-width: 3; }
+.pz-l-arrow { pointer-events: none; }
+.pz-l-label {
+  font-family: var(--font-brush); font-weight: 600;
+  fill: var(--ink-1); stroke: var(--paper-0); paint-order: stroke;
+  pointer-events: none;
+}
+.pz-l-temp { fill: none; stroke: var(--cinnabar); stroke-width: 2; stroke-dasharray: 6 4; pointer-events: none; }
+
+/* ---- 卡片 ---- */
+.pz-card {
+  position: absolute;
+  background: var(--paper-1);
+  border: 1px solid var(--paper-edge);
+  border-radius: 4px;
+  box-shadow: 0 2px 6px var(--paper-shadow);
+  -webkit-user-select: none; user-select: none;
+  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
+}
+.pz-card:hover { border-color: var(--ink-4); }
+.pz-card.sel { border-color: var(--cinnabar); box-shadow: 0 0 0 2px var(--cinnabar-soft), 0 3px 10px var(--paper-shadow); }
+.pz-card.target { box-shadow: 0 0 0 2.5px var(--cinnabar), 0 3px 10px var(--paper-shadow); }
+.pz-c-bar { position: absolute; left: 0; top: 0; bottom: 0; width: 3.5px; border-radius: 4px 0 0 4px; }
+.pz-c-main { position: absolute; inset: 0; padding: 9px 12px 8px 13px; display: flex; flex-direction: column; gap: 2px; }
+.pz-c-title {
+  font-family: var(--font-brush); font-size: 15px; line-height: 1.35;
+  color: var(--ink-0); padding-right: 20px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pz-c-sub { font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); letter-spacing: .3px; }
+.pz-c-body {
+  flex: 1; min-height: 0; overflow: hidden;
+  font-size: 12px; line-height: 1.65; color: var(--ink-2);
+  margin-top: 3px; overflow-wrap: anywhere;
+}
+.pz-c-glyph {
+  position: absolute; top: 6px; right: 7px;
+  font-family: var(--font-brush); font-size: 10px;
+  border: 1px solid; border-radius: 3px; padding: 0 3px; opacity: .75;
+  pointer-events: none;
+}
+.pz-c-info {
+  position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%);
+  border: 1px solid var(--paper-edge); background: var(--paper-2);
+  color: var(--ink-2); font-size: 10.5px; letter-spacing: 1px;
+  padding: 1px 9px; border-radius: 10px;
+  opacity: 0; transition: opacity var(--dur-fast);
+}
+.pz-card:hover .pz-c-info { opacity: 1; }
+.pz-c-info:hover { border-color: var(--cinnabar); color: var(--cinnabar); }
+/* 便签 */
+.pz-card.kind-note {
+  background: color-mix(in srgb, var(--gold) 12%, var(--paper-1));
+  border-color: color-mix(in srgb, var(--gold) 45%, var(--paper-edge));
+}
+.pz-c-drag {
+  position: absolute; top: 0; left: 0; right: 0; height: 17px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; color: color-mix(in srgb, var(--gold) 80%, var(--ink-3));
+  cursor: grab; border-bottom: 1px dashed color-mix(in srgb, var(--gold) 30%, transparent);
+  border-radius: 4px 4px 0 0;
+}
+.pz-c-note {
+  position: absolute; inset: 22px 10px 8px 11px;
+  font-family: var(--font-brush); font-size: 13.5px; line-height: 1.7;
+  color: var(--ink-1); outline: none; overflow-y: auto;
+  cursor: text; user-select: text; -webkit-user-select: text;
+}
+.pz-c-note:empty::before { content: '批注…'; color: var(--ink-4); }
+/* 缩放手柄 / 连接桩 */
+.pz-resize {
+  position: absolute; right: 1px; bottom: 1px; width: 13px; height: 13px;
+  cursor: nwse-resize; opacity: 0; transition: opacity var(--dur-fast);
+  background: repeating-linear-gradient(135deg, transparent 0 3px, var(--ink-4) 3px 4px);
+  border-radius: 0 0 3px 0;
+}
+.pz-card:hover .pz-resize, .pz-card.sel .pz-resize,
+.pz-group:hover .pz-resize, .pz-group.sel .pz-resize { opacity: .8; }
+.pz-port {
+  position: absolute; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--paper-1); border: 1.5px solid var(--cinnabar);
+  opacity: 0; transition: opacity var(--dur-fast);
+  cursor: crosshair;
+}
+.pz-card:hover .pz-port, .pz-card.sel .pz-port { opacity: 1; }
+.pz-port[data-p="n"] { top: -5px; left: 50%; transform: translateX(-50%); }
+.pz-port[data-p="s"] { bottom: -5px; left: 50%; transform: translateX(-50%); }
+.pz-port[data-p="w"] { left: -5px; top: 50%; transform: translateY(-50%); }
+.pz-port[data-p="e"] { right: -5px; top: 50%; transform: translateY(-50%); }
+
+/* ---- 工具栏 / 样式条 / 空态 / 提示 / 撤销 ---- */
+#pz-toolbar {
+  position: absolute; top: 14px; right: 16px; z-index: 12;
+  display: flex; align-items: center; gap: 3px;
+  background: color-mix(in srgb, var(--paper-1) 90%, transparent);
+  border: 1px solid var(--paper-edge); border-radius: var(--radius-paper);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 2px 10px var(--paper-shadow);
+  padding: 4px 6px;
+}
+#pz-toolbar button {
+  border: none; background: transparent; color: var(--ink-2);
+  font-size: 12px; font-family: var(--font-brush); letter-spacing: 1px;
+  padding: 4px 8px; border-radius: 3px; white-space: nowrap;
+  transition: all var(--dur-fast);
+}
+#pz-toolbar button:hover { background: var(--paper-2); color: var(--ink-0); }
+#pz-toolbar .pz-zoom {
+  font-family: var(--font-mono); font-size: 11px; color: var(--ink-3);
+  width: 40px; text-align: center; cursor: pointer;
+}
+#pz-toolbar .pz-zoom:hover { color: var(--cinnabar); }
+#pz-toolbar .pz-tb-sep { width: 1px; height: 16px; background: var(--paper-edge); margin: 0 3px; }
+#pz-toolbar .pz-tb-clear.arm { background: var(--cinnabar); color: #fff; }
+#pz-stylebar {
+  position: absolute; z-index: 13; display: none;
+  flex-direction: column; gap: 7px;
+  width: 238px; padding: 10px 12px;
+  background: var(--paper-1); border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-paper);
+  box-shadow: 0 8px 30px var(--paper-shadow);
+}
+#pz-stylebar.open { display: flex; }
+.pz-sb-row { display: flex; align-items: center; gap: 8px; }
+.pz-sb-lab { width: 30px; flex: none; font-size: 11px; color: var(--ink-4); letter-spacing: 2px; }
+.pz-sb-seg { display: flex; flex: 1; border: 1px solid var(--paper-edge); border-radius: 4px; overflow: hidden; }
+.pz-sb-seg button {
+  flex: 1; border: none; background: transparent; color: var(--ink-2);
+  font-size: 11.5px; padding: 4px 0;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  transition: all var(--dur-fast);
+}
+.pz-sb-seg button + button { border-left: 1px solid var(--paper-edge); }
+.pz-sb-seg button:hover { background: var(--paper-2); color: var(--ink-0); }
+.pz-sb-seg button.on { background: var(--cinnabar); color: #fff; }
+.pz-sb-seg button i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.pz-sb-seg button.on i { outline: 1px solid rgba(255, 255, 255, .8); }
+.pz-sb-last { margin-top: 2px; }
+.pz-sb-label {
+  flex: 1; min-width: 0; border: 1px solid var(--paper-edge); border-radius: 4px;
+  background: var(--paper-2); color: var(--ink-0); font-size: 12px;
+  padding: 4px 9px; outline: none;
+}
+.pz-sb-label:focus { box-shadow: 0 0 0 2px var(--cinnabar-soft); }
+.pz-sb-del {
+  border: 1px solid var(--paper-edge); background: transparent; color: var(--ink-3);
+  font-size: 11.5px; padding: 4px 9px; border-radius: 4px; white-space: nowrap;
+  transition: all var(--dur-fast);
+}
+.pz-sb-del:hover { border-color: var(--cinnabar); color: var(--cinnabar); }
+#pz-empty {
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 9px; pointer-events: none;
+}
+#pz-empty .pz-empty-title {
+  font-family: var(--font-brush); font-size: 26px; letter-spacing: 12px;
+  color: var(--ink-2); margin-bottom: 10px; padding-left: 12px;
+}
+#pz-empty .pz-empty-row { font-size: 13px; color: var(--ink-3); letter-spacing: 1px; }
+#pz-empty .pz-empty-tip { font-size: 11px; color: var(--ink-4); margin-top: 14px; letter-spacing: 2px; }
+#pz-hint {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  font-size: 12px; color: var(--ink-3); letter-spacing: 1px;
+  background: color-mix(in srgb, var(--paper-1) 85%, transparent);
+  padding: 5px 16px; border-radius: 14px;
+  border: 1px solid var(--paper-edge);
+  pointer-events: none; z-index: 10;
+}
+#pz-undo {
+  position: absolute; bottom: 46px; left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  display: flex; align-items: center; gap: 12px;
+  background: var(--ink-1); color: var(--paper-1);
+  font-size: 12.5px; letter-spacing: 1px;
+  padding: 7px 8px 7px 16px; border-radius: 18px;
+  z-index: 14; opacity: 0; pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-brush), transform var(--dur-fast) var(--ease-brush);
+}
+#pz-undo.show { opacity: .95; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+#pz-undo button {
+  border: 1px solid color-mix(in srgb, var(--paper-1) 45%, transparent);
+  background: transparent; color: var(--paper-1);
+  font-size: 11.5px; padding: 2px 11px; border-radius: 12px;
+}
+#pz-undo button:hover { background: var(--cinnabar); border-color: var(--cinnabar); }
+
+/* 窄屏（≤640px）：卡片库改浮动抽屉（默认收起），工具栏收窄换行 */
+@media (max-width: 640px) {
+  #pz-lib-btn {
+    display: inline-block;
+    position: absolute; left: 10px; top: 10px; z-index: 25;
+    border: 1px solid var(--paper-edge);
+    background: color-mix(in srgb, var(--paper-1) 92%, transparent);
+    color: var(--ink-2); font-size: 12.5px;
+    padding: 5px 11px; border-radius: var(--radius-paper);
+    box-shadow: 0 2px 10px var(--paper-shadow);
+  }
+  #pz-library {
+    position: absolute; z-index: 30; height: 100%;
+    width: min(78vw, var(--sidebar-w));
+    transform: translateX(-102%);
+    transition: transform var(--dur-mid) var(--ease-brush);
+    background: var(--paper-1);
+    box-shadow: 8px 0 30px var(--paper-shadow);
+  }
+  #pz-library.open { transform: translateX(0); }
+  #pz-toolbar { flex-wrap: wrap; justify-content: flex-end; max-width: calc(100vw - 90px); right: 8px; }
+  #pz-hint { display: none; }
+  #pz-empty .pz-empty-title { font-size: 20px; letter-spacing: 8px; }
+  #pz-empty .pz-empty-row { font-size: 12px; }
+}
+
+/* ============================================================
+   v2 动效新增（docs/动效升级计划书 · 拼图）
+   ------------------------------------------------------------
+   三块，全部只动 transform/opacity（落地阴影收敛为计划书明确点名），
+   引擎仅挂 class / 挂 --pz-i，不改每帧渲染逻辑；
+   prefers-reduced-motion 由 shell.css 全局块（duration .01ms / delay 0）
+   直跳终态，无需在此重复声明。
+   ============================================================ */
+
+/* 1) 新卡片上板落地弹簧：scale 过冲 + 阴影收敛（addCard 挂 .pz-land） */
+.pz-card.pz-land {
+  animation: pz-card-land .45s var(--ease-out-soft) both;
+  transform-origin: 50% 100%;
+}
+@keyframes pz-card-land {
+  0%   { opacity: 0; transform: scale(.88); box-shadow: 0 18px 36px var(--paper-shadow); }
+  62%  { opacity: 1; transform: scale(1.03); box-shadow: 0 7px 18px var(--paper-shadow); }
+  100% { opacity: 1; transform: scale(1); box-shadow: 0 2px 6px var(--paper-shadow); }
+}
+
+/* 2) 新连线描线生长：stroke-dashoffset 由引擎 WAAPI 驱动（瞬态、结束即还原），
+      此处只留档不加规则——避免与 dash/dot 线型的 stroke-dasharray 语义冲突 */
+
+/* 3) 卡片库分组展开条目 stagger：引擎 staggerItems 挂 --pz-i，
+      按 --stagger-gap（18ms）级联 delay，260ms 封顶（长分组第 15 条起同步
+      显影，守住 stagger ≤24 条红线）。只作用于分组条目（data-sec），
+      搜索结果平铺不参与，避免每次击键重放 */
+.pz-lg[data-sec].open > .pz-lg-body .pz-li {
+  animation: pz-li-in var(--dur-step) var(--ease-appear) both;
+  animation-delay: min(calc(var(--stagger-gap) * var(--pz-i, 0)), 260ms);
+}
+@keyframes pz-li-in {
+  from { opacity: 0; transform: translateY(5px); }
+}

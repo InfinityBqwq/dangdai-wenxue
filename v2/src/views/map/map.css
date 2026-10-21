@@ -1,0 +1,159 @@
+/* ============================================================
+   map.css — 地图视图样式（v2 岛）
+   ------------------------------------------------------------
+   主体从旧版 css/main.css「地图视图」分节（L659-745）逐条拷贝，
+   选择器保持原名（引擎依赖这些 id/class）；旧版 ≤640px 响应式块中
+   地图三条一并拷入。文末「v2 动效新增」小节为动效升级计划书·地图
+   落点的追加样式（年份滚轮 odometer / 播放钮形变+脉冲），全部只动
+   transform/opacity/color；reduced-motion 由 shell.css 全局灭火块
+   （transition/animation → .01ms）与本岛 JS 层 useReducedMotion 双层降级。
+   ============================================================ */
+
+/* ============ 地图视图 ============ */
+#view-map { overflow: hidden; }
+#map-chart { width: 100%; height: 100%; }
+#map-chart canvas { touch-action: none; }
+/* 懒加载占位(echarts/geojson 首开地图时注入) */
+.map-loading {
+  padding: 60px 20px; text-align: center;
+  color: var(--ink-3); font-size: 14px; letter-spacing: 2px;
+}
+
+/* 多词条名录浮层 */
+.map-pop {
+  position: absolute;
+  min-width: 200px; max-width: 250px;
+  background: var(--paper-1);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-paper);
+  box-shadow: 0 8px 26px var(--paper-shadow);
+  z-index: 20;
+  padding: 10px 8px 8px;
+  animation: popIn .16s var(--ease-brush);
+}
+@keyframes popIn { from { opacity: 0; transform: translateY(4px); } }
+/* 名录浮层出场淡出（map.js 加 .closing 140ms 后移除） */
+.map-pop.closing {
+  opacity: 0; transform: translateY(4px);
+  transition: opacity .14s var(--ease-brush), transform .14s var(--ease-brush);
+}
+.map-pop .mp-head {
+  font-family: var(--font-brush);
+  font-size: 14px; color: var(--ink-0);
+  padding: 0 8px 8px; margin-bottom: 4px;
+  border-bottom: 1px solid var(--ink-wash);
+}
+.map-pop .mp-count { font-size: 11px; color: var(--ink-3); margin-left: 6px; }
+.map-pop .mp-item {
+  display: flex; align-items: center; gap: 7px;
+  width: 100%; text-align: left;
+  border: none; background: transparent;
+  padding: 6px 8px; border-radius: 3px;
+  cursor: pointer;
+}
+.map-pop .mp-item:hover { background: var(--paper-2); }
+.map-pop .mp-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.map-pop .mp-name { font-size: 13px; color: var(--ink-1); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.map-pop .mp-years { font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); }
+
+#map-slider-wrap {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: 26px;
+  width: min(720px, 80%);
+  background: color-mix(in srgb, var(--paper-1) 96%, transparent);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-paper);
+  padding: 12px 22px 10px;
+  z-index: 10;
+  box-shadow: 0 2px 14px var(--paper-shadow);
+}
+#map-slider-wrap .ms-years {
+  display: flex; justify-content: space-between;
+  font-family: var(--font-mono); font-size: 11px; color: var(--ink-3);
+  margin-bottom: 4px;
+}
+#map-year-display {
+  text-align: center; font-family: var(--font-brush);
+  font-size: 17px; color: var(--ink-0); letter-spacing: 2px;
+}
+#map-year-display .yr { color: var(--cinnabar); font-size: 22px; }
+/* v2：播放钮定位移至外包裹层 .map-play-wrap（motion 形变图标叠加层挂那里），
+   按钮本体铺满包裹层；引擎照旧写 ▶/⏸ 文本，font-size:0 视觉隐藏 */
+.map-play-wrap {
+  position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
+  width: 34px; height: 34px; z-index: 2; /* 显式层级：防动画层叠上下文吞点击（仓库踩坑速查） */
+}
+#map-play {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  border-radius: 50%;
+  border: 1px solid var(--cinnabar); background: var(--cinnabar-soft);
+  color: var(--cinnabar); font-size: 0;
+  cursor: pointer;
+}
+#map-play:hover { background: var(--cinnabar); color: #fff; }
+#map-slider {
+  width: 100%; accent-color: var(--cinnabar);
+  height: 4px;
+}
+#map-legend {
+  position: absolute; top: 14px; left: 16px;
+  background: color-mix(in srgb, var(--paper-1) 96%, transparent);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-paper);
+  padding: 10px 14px; font-size: 12.5px;
+  color: var(--ink-2); z-index: 10;
+}
+#map-legend .lg-row { display: flex; align-items: center; gap: 7px; margin: 4px 0; }
+
+/* ============ v2 动效新增（React 层驱动） ============ */
+/* 年份数字滚轮（odometer）：引擎照旧每帧写 .yr 文本（此处视觉隐藏，保留给
+   屏幕阅读器与引擎直写），.odo 以数字位竖向滑条镜像滚动，弹簧缓动 --ease-spring */
+#map-year-display .yr {
+  position: absolute; width: 1px; height: 1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.odo {
+  display: inline-flex; height: 1em;
+  font-size: 22px; line-height: 1; color: var(--cinnabar);
+  vertical-align: -0.12em;
+}
+.odo-col { width: 0.6em; height: 1em; overflow: hidden; }
+.odo-strip {
+  display: flex; flex-direction: column;
+  transition: transform .28s var(--ease-spring);
+  will-change: transform;
+}
+.odo-digit { height: 1em; line-height: 1; text-align: center; }
+
+/* 播放钮 ▶/⏸ 形变图标 + 激活脉冲：铺在 #map-play 之上，
+   pointer-events:none 保证点击仍落到按钮（引擎监听原封不动） */
+.play-fx { position: absolute; inset: 0; pointer-events: none; }
+.play-pulse {
+  position: absolute; inset: -3px; border-radius: 50%;
+  border: 2px solid var(--cinnabar);
+}
+.play-glyph {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.pg-tri {
+  width: 11px; height: 13px;
+  background: var(--cinnabar);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+.pg-bars { display: flex; gap: 3px; }
+.pg-bar {
+  width: 4px; height: 13px; border-radius: 1px;
+  background: var(--cinnabar);
+  transform-origin: center;
+}
+/* 悬停换装随旧按钮态（hover 朱砂底 → 图标转白，等价旧版 color:#fff） */
+.map-play-wrap:hover .pg-tri,
+.map-play-wrap:hover .pg-bar { background: #fff; }
+
+/* ============ 响应式（旧版 ≤640px 块中地图三条） ============ */
+@media (max-width: 640px) {
+  #map-slider-wrap { width: calc(100% - 20px); bottom: 12px; padding: 10px 14px 8px; }
+  #map-legend { font-size: 11.5px; padding: 8px 10px; }
+  .map-pop { max-width: 62vw; }
+  .map-play-wrap { right: 12px; } /* v2：包裹层跟手窄屏内边距 */
+}

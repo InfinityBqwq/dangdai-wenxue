@@ -139,11 +139,9 @@ export function setSource(m: string, opts: { fromHash?: boolean; silent?: boolea
     H().syncSourceHash(m)
   }
   H().closeDrawer()
-  // 通知视图：旧版 window.Views.onSourceChange 照旧；React 岛走自定义事件
-  for (const mod of Object.values((window as any).Views || {})) {
-    const modAny = mod as any
-    if (modAny && typeof modAny.onSourceChange === 'function') modAny.onSourceChange()
-  }
+  // 通知视图：五岛统一由包装层订阅 source（useAppContext → 引擎 onSourceChange）
+  // 单路驱动；不再广播 window.Views.onSourceChange（与岛订阅双路，graph 会重复
+  // 重推导+重绘）。自定义事件照旧派发（引擎侧如有需要可监听）。
   window.dispatchEvent(new CustomEvent('wl:sourcechange', { detail: { source: m } }))
   if (!opts.silent) H().toast(SRC_TOAST[m] || m, 2200)
   notify()

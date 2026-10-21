@@ -1,0 +1,137 @@
+/* ============================================================
+   timeline.css — 时间轴视图样式（v2 island）
+   ------------------------------------------------------------
+   主体自旧版 css/main.css「时间轴视图」分节（263–328 行）原样拷贝，
+   选择器保持原名——引擎 build/buildFilters 产出的 id/class 依赖它们。
+   旧版「视图容器」分节（#views/.view*）由 shell.css 承担，此处不重复。
+   v2 动效新增（计划书 §五·时间轴）见文件尾两节：
+   · 光标邻近墨染高亮（.ink-near，class 由 engine.ts rAF pointermove 维护）
+   · 聚焦虚线环呼吸 + 旋转（加在原 .focus-ring 元素上，纯 CSS）
+   全部走 tokens.css 令牌，只动 transform/opacity/color。
+   ============================================================ */
+
+/* ============ 时间轴视图 ============ */
+#view-timeline { overflow: hidden; cursor: grab; }
+#view-timeline.dragging { cursor: grabbing; }
+#tl-svg { display: block; width: 100%; height: 100%; }
+
+/* 时间轴内文本样式（SVG 内） */
+.tl-period-label {
+  font-family: var(--font-brush);
+  fill: var(--ink-1);
+  letter-spacing: 6px;
+}
+.tl-period-theme {
+  font-family: var(--font-body);
+  fill: var(--ink-3);
+}
+.tl-year-label {
+  font-family: var(--font-body);
+  fill: var(--ink-3);
+}
+.tl-year-label.decade { fill: var(--ink-1); font-weight: 600; }
+.tl-item-label {
+  font-family: var(--font-brush);
+  fill: var(--ink-1);
+}
+.tl-node { cursor: pointer; }
+
+/* 时间轴筛选浮层（右上角，避让时期题字；左下角把手可拉伸，尺寸记忆在 localStorage） */
+#tl-filters {
+  position: absolute; top: 14px; right: 16px;
+  display: flex; flex-direction: column; gap: 6px;
+  width: 252px; min-width: 170px; max-width: 60vw;
+  z-index: 10;
+  background: color-mix(in srgb, var(--paper-1) 88%, transparent);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-paper);
+  padding: 10px 12px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 2px 10px var(--paper-shadow);
+}
+#tl-filters .fl-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
+#tl-filters .fl-grip {
+  position: absolute; left: 2px; bottom: 2px; width: 13px; height: 13px;
+  cursor: nwse-resize; opacity: .4; border-radius: 3px;
+  background: repeating-linear-gradient(135deg, transparent 0 3px, var(--ink-3) 3px 4.5px);
+}
+#tl-filters .fl-grip:hover { opacity: .85; }
+#tl-filters .fl-title { font-size: 12px; color: var(--ink-3); letter-spacing: 2px; margin-bottom: 2px; }
+#tl-filters .fl-hint { font-size: 11px; color: var(--ink-3); line-height: 1.7; margin-top: 8px; border-top: 1px dashed var(--paper-edge); padding-top: 7px; }
+#tl-filters .fl-toggle { cursor: pointer; user-select: none; }
+#tl-filters .fl-toggle:hover { color: var(--ink-1); }
+#tl-filters .fl-arrow { display: inline-block; transition: transform var(--dur-fast); }
+#tl-filters.collapsed .fl-arrow { transform: rotate(-90deg); }
+#tl-filters.collapsed .fl-body { display: none; }
+#tl-filters label {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 13px; color: var(--ink-1); cursor: pointer; user-select: none;
+}
+#tl-filters input[type="checkbox"] { accent-color: var(--cinnabar); }
+#tl-filters .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+/* 时间轴淡入淡出（入场显影 + 图层过滤 + 聚焦环） */
+.g-minors, .g-washes, .g-ticks { transition: opacity .45s var(--ease-brush); }
+.minor, .major, .band, .seal { transition: opacity .3s var(--ease-brush); }
+.minor.off, .major.off, .band.off, .seal.off { opacity: 0 !important; pointer-events: none; }
+.focus-ring { opacity: 0; pointer-events: none; transition: opacity .22s var(--ease-brush); }
+.focus-ring.show { opacity: 1; }
+
+/* ============================================================
+   v2 动效新增 a：卡片光标邻近墨染高亮
+   ------------------------------------------------------------
+   .ink-near 由 engine.ts 的 rAF 节流 pointermove 加/去（只切 class）；
+   这里只做颜色过渡（fill/stroke：纸面染墨加深、纸缘描边入墨），
+   不动 transform，不产生额外合成层。原样式不加 transition 时零开销。
+   ============================================================ */
+.major .card-paper {
+  transition: fill var(--dur-fast) var(--ease-glide), stroke var(--dur-fast) var(--ease-glide);
+}
+.major.ink-near .card-paper {
+  fill: var(--paper-2);
+  stroke: var(--ink-3);
+}
+/* 注意：.card-accent（类型色条）不参与墨染——CSS fill 会覆盖 SVG 属性色，
+   会把五颜六色的类型色条统一染成一色（违背"无语义的颜色"红线） */
+
+/* ============================================================
+   v2 动效新增 b：聚焦虚线环呼吸 + 旋转
+   ------------------------------------------------------------
+   纯 CSS 动画加在引擎原有的 .focus-ring 子元素上：
+   · rect（卡片聚焦框）：绕自身中心缓旋 + 呼吸（opacity 起伏），
+     虚线随旋转让"聚焦中"有持续生命感；
+   · circle（次要事件聚焦点）：轻微缩放脉冲。
+   只动 transform/opacity；reduced-motion 下直跳静态终态。
+   ============================================================ */
+.focus-ring.show rect {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: tl-ring-live 12s linear infinite;
+}
+.focus-ring.show circle {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: tl-ring-pulse 2.2s var(--ease-glide) infinite;
+}
+@keyframes tl-ring-live {
+  0%   { transform: rotate(0deg); opacity: 1; }
+  50%  { transform: rotate(180deg); opacity: .66; }
+  100% { transform: rotate(360deg); opacity: 1; }
+}
+@keyframes tl-ring-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.22); opacity: .6; }
+}
+
+/* ============ 响应式（自旧版 main.css ≤640px 分节，仅时间轴相关行） ============ */
+@media (max-width: 640px) {
+  /* 时间轴:图例面板收窄 */
+  #tl-filters { right: 8px; top: 8px; max-width: 46vw; }
+}
+
+/* ============ 减动效偏好（双层降级的 CSS 层） ============ */
+@media (prefers-reduced-motion: reduce) {
+  /* 呼吸/旋转是无限动画，shell.css 的全局 .01ms 兜底会令其高频空转——直接关停 */
+  .focus-ring.show rect, .focus-ring.show circle { animation: none !important; }
+  .major .card-paper { transition: none !important; }
+}
