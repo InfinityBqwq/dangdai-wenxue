@@ -16,6 +16,9 @@
  * 保留的核心性能/正确性设计（勿动）：
  *  · 可见钉集合签名 diff：集合未变零 setOption，滑杆/播放期间其余帧零 ECharts 开销；
  *  · 数据项稳定 id（type:lng,lat）：enter/leave 按身份 diff，退场淡出的是"这颗"钉；
+ *  · zlevel 分层（2026-10-21 性能修复）：geo 阴影底图留在 zlevel 0、三组钉共居
+ *    zlevel 1 独立画布——钉 enter/leave 动画的逐帧重绘只发生在钉层，不再连带
+ *    重 raster 化省界 canvas 阴影（实测播放段 27.5→54 FPS、>100ms 长帧 11→0）；
  *  · flyGeo 逐帧 setOption 显式 animation:false（防继承合并态动画），缩放走对数空间；
  *  · 播放 rAF 连续推进浮点年（每秒 2 年）；reduced-motion 时动画/浮层硬切。
  */
@@ -245,7 +248,8 @@ function baseOption() {
         name: '群体',
         type: 'scatter',
         coordinateSystem: 'geo',
-        symbol: 'circle',
+        zlevel: 1, // 钉层独立画布：入场/退场动画逐帧重绘只落在钉层，
+        symbol: 'circle', // geo 阴影底图（zlevel 0）不被连带逐帧重 raster（掉帧主因，2026-10-21 实测）
         symbolSize: (v: any) => 11 + (v ? v[2] : 1) * 3,
         itemStyle: { color: cssVar('--type-movement') || '#37638a', borderColor: '#f7f1e3', borderWidth: 1.2 },
         z: 20,
@@ -256,6 +260,7 @@ function baseOption() {
         name: '刊物',
         type: 'scatter',
         coordinateSystem: 'geo',
+        zlevel: 1, // 同上：三系共钉层画布，动画重绘不碰 geo 阴影层
         symbol: 'diamond',
         symbolSize: (v: any) => 11 + (v ? v[2] : 1) * 2,
         itemStyle: { color: cssVar('--type-work') || '#a06a2a', borderColor: '#f7f1e3', borderWidth: 1.2 },
@@ -267,6 +272,7 @@ function baseOption() {
         name: '人物',
         type: 'scatter',
         coordinateSystem: 'geo',
+        zlevel: 1, // 同上
         symbol: 'pin',
         symbolSize: (v: any) => 17 + (v ? v[2] : 1) * 3,
         itemStyle: { color: cssVar('--type-person') || '#8f3b2c', borderColor: '#f7f1e3', borderWidth: 1.2 },
@@ -373,7 +379,11 @@ let pendingShow: any = null // 库就绪前收到的 onShow 参数
       pendingShow = params || {}
       return
     }
-    chart.resize()
+    // keep-alive 重入且尺寸未变时跳过 resize：免一次 geo 阴影层全量重绘的
+    // 长帧（隐藏期画布保留原像素，无需重铺）。隐藏期窗口尺寸变过（含被
+    // resize 监听器缩成 0×0）则照常 resize —— clientWidth/Height 与图表
+    // 内部宽高不一致即是信号。
+    if (chartDom.clientWidth !== chart.getWidth() || chartDom.clientHeight !== chart.getHeight()) chart.resize()
     if (params && params.person) {
       const loc = locs.find((l: any) => l.n === params.person)
       if (loc) {

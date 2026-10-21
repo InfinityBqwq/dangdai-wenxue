@@ -459,6 +459,12 @@ export function mountGraphEngine(): GraphEngineHandle {
   }
 
   let dragging = false, moved = false, lx = 0, ly = 0;
+  /* 挂载时序加固（v2）：初始居中（onResize 的 centered 分支）只在视图从未被
+     推动（聚焦飞行/拖拽/缩放）时插手。keep-alive 下画布盒可能晚就绪，
+     ResizeObserver 晚于 focusNode 的飞行触发时，旧的 centered 分支会把
+     view.x/y 重置回画布中心、只留下聚焦的 k——聚焦落点被甩飞（实测偶发，
+     见 browser-accept/graph-final-verify.mjs）。 */
+  let viewTouched = false;
   canvas.addEventListener('mousedown', (e: MouseEvent) => {
     dragging = true; moved = false; lx = e.clientX; ly = e.clientY;
     stopFly();
@@ -469,18 +475,26 @@ export function mountGraphEngine(): GraphEngineHandle {
       if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
       view.x += dx; view.y += dy;
       lx = e.clientX; ly = e.clientY;
+      viewTouched = true;
       requestDraw();
     } else {
+      /* 命中修复（v2）：旧版逐字代码在这里先减一次 rect，pick→toWorld 内又减一次，
+         拾取点整体偏移 (rect.left, rect.top)。旧版 .view 满屏（rect 恒 0,0）无感；
+         v2 #views 自顶栏下缘起（inset: var(--topbar-h) 0 0 0），rect.top=56 →
+         触发点恒在光标正上方 56px（实测见 browser-accept/graph-hover-probe.mjs）。
+         现把 client 坐标直传 pick（rect 只在 toWorld 减一次），并加画布盒外
+         （顶栏等 v2 新出现的画布外区域）不拾取。 */
       const rect = canvas.getBoundingClientRect();
-      const n = pick(e.clientX - rect.left, e.clientY - rect.top);
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      const inside = mx >= 0 && my >= 0 && mx <= rect.width && my <= rect.height;
+      const n = inside ? pick(e.clientX, e.clientY) : null;
       if (n !== hoverRef) { setHover(n); canvas.style.cursor = n ? 'pointer' : 'grab'; }
     }
   });
   w.addEventListener('mouseup', () => { dragging = false; });
   canvas.addEventListener('click', (e: MouseEvent) => {
     if (moved) return;
-    const rect = canvas.getBoundingClientRect();
-    const n = pick(e.clientX - rect.left, e.clientY - rect.top);
+    const n = pick(e.clientX, e.clientY);
     if (n) w.openDrawerEntity(n.name);
   });
   canvas.addEventListener('wheel', (e: WheelEvent) => {
@@ -493,11 +507,12 @@ export function mountGraphEngine(): GraphEngineHandle {
     view.x = mx - (mx - view.x) * (k / view.k);
     view.y = my - (my - view.y) * (k / view.k);
     view.k = k;
+    viewTouched = true;
     requestDraw();
   }, { passive: false });
   // 双击空白回位
   canvas.addEventListener('dblclick', (e: MouseEvent) => {
-    if (!pick(e.clientX - canvas.getBoundingClientRect().left, e.clientY - canvas.getBoundingClientRect().top)) {
+    if (!pick(e.clientX, e.clientY)) {
       flyTo(0.55, W / 2, H / 2 - 20);
     }
   });
@@ -532,6 +547,7 @@ export function mountGraphEngine(): GraphEngineHandle {
       if (Math.abs(dx) + Math.abs(dy) > 6) tDrag.moved = true;
       view.x += dx; view.y += dy;
       tDrag.x = t.clientX; tDrag.y = t.clientY;
+      viewTouched = true;
       requestDraw();
     } else if (tPinch && e.touches.length === 2) {
       const [a, b] = e.touches;
@@ -543,6 +559,7 @@ export function mountGraphEngine(): GraphEngineHandle {
       const wx = (tPinch.mx - tPinch.vx0) / tPinch.k0, wy = (tPinch.my - tPinch.vy0) / tPinch.k0;
       view.k = k;
       view.x = mx - wx * k; view.y = my - wy * k;
+      viewTouched = true;
       requestDraw();
     }
   }, { passive: false });
@@ -550,8 +567,7 @@ export function mountGraphEngine(): GraphEngineHandle {
     // 轻点(短按未拖动)→ 拾取节点开卡片
     if (tDrag && !tDrag.moved && performance.now() - tDrag.t0 < 350 && e.changedTouches.length === 1) {
       const t = e.changedTouches[0];
-      const rect = canvas.getBoundingClientRect();
-      const n = pick(t.clientX - rect.left, t.clientY - rect.top);
+      const n = pick(t.clientX, t.clientY);
       if (n) w.openDrawerEntity(n.name);
     }
     tDrag = null; tPinch = null;
@@ -585,6 +601,25 @@ export function mountGraphEngine(): GraphEngineHandle {
   }
 
   /* ---------- 力度调节面板(右上角,可折叠) ---------- */
+  /* 量程修复（v2）：773 节点/2500 边量级下，线性量程拉满(-140，仅默认的 3.3×)实测仍聚团
+     （节点云包围半径仅 +8%，见 browser-accept/graph-hover-probe.mjs force 段）。
+     上限提到 -1400（默认 -42 的 33×），滑杆改对数映射（t∈[0,1] → charge=-exp(ln6+t·ln(1400/6))），
+     低段(默认档附近)保留细腻手感；link/center 仍线性。滑杆空间与力值空间经 toSlider/fromSlider 换算。 */
+  const CHARGE_WEAKEST = 6, CHARGE_STRONGEST = 1400   // 取正参与对数，实际 charge 为负
+  const chargeFromT = (t: number): number =>
+    -Math.round(Math.exp(Math.log(CHARGE_WEAKEST) + t * (Math.log(CHARGE_STRONGEST) - Math.log(CHARGE_WEAKEST))))
+  const tFromCharge = (v: number): number =>
+    (Math.log(-v) - Math.log(CHARGE_WEAKEST)) / (Math.log(CHARGE_STRONGEST) - Math.log(CHARGE_WEAKEST))
+  const idMap = (v: number): number => v
+  const rows: { k: string; label: string; min: number; max: number; step: number;
+    fmt: (v: number) => string; tip: string; toSlider: (v: number) => number; fromSlider: (v: number) => number }[] = [
+    { k: 'charge', label: '节点排斥力', min: 0, max: 1, step: 0.001, fmt: (v: number) => v.toFixed(0),
+      tip: '越大越散开(团块展开)——对数刻度,拉满约1400', toSlider: tFromCharge, fromSlider: chargeFromT },
+    { k: 'link',   label: '连线吸引力', min: 0.05, max: 1, step: 0.05, fmt: (v: number) => v.toFixed(2),
+      tip: '关联节点互相靠拢的力度', toSlider: idMap, fromSlider: idMap },
+    { k: 'center', label: '向心聚拢',   min: 0.05, max: 1.5, step: 0.05, fmt: (v: number) => v.toFixed(2),
+      tip: '整体收向画布中心的力度', toSlider: idMap, fromSlider: idMap },
+  ];
   function buildForcePanel(): void {
     const box = document.createElement('div');
     box.id = 'graph-forces';
@@ -592,21 +627,13 @@ export function mountGraphEngine(): GraphEngineHandle {
     box.setAttribute('data-vpanel', '')
     box.style.setProperty('--vpanel-i', '1')
     if (w.innerWidth <= 640) box.classList.add('collapsed');   // 窄屏默认折叠
-    const rows = [
-      { k: 'charge', label: '节点排斥力', min: -140, max: -6, step: 2, fmt: (v: number) => v.toFixed(0),
-        tip: '越大越散开(团块展开)' },
-      { k: 'link',   label: '连线吸引力', min: 0.05, max: 1, step: 0.05, fmt: (v: number) => v.toFixed(2),
-        tip: '关联节点互相靠拢的力度' },
-      { k: 'center', label: '向心聚拢',   min: 0.05, max: 1.5, step: 0.05, fmt: (v: number) => v.toFixed(2),
-        tip: '整体收向画布中心的力度' },
-    ];
     box.innerHTML = `
       <div class="gf-title gf-toggle">力度调节 <span class="gf-arrow">▾</span></div>
       <div class="gf-body">
         ${rows.map(r => `
           <label class="gf-row" title="${r.tip}">
             <span class="gf-label">${r.label}</span>
-            <input type="range" min="${r.min}" max="${r.max}" step="${r.step}" value="${forces[r.k]}" data-f="${r.k}">
+            <input type="range" min="${r.min}" max="${r.max}" step="${r.step}" value="${r.toSlider(forces[r.k]).toFixed(3)}" data-f="${r.k}">
             <span class="gf-val" data-v="${r.k}">${r.fmt(forces[r.k])}</span>
           </label>`).join('')}
         <button class="gf-reset">↺ 复位力度</button>
@@ -616,14 +643,15 @@ export function mountGraphEngine(): GraphEngineHandle {
     (box.querySelector('.gf-toggle') as HTMLElement).addEventListener('click', () => box.classList.toggle('collapsed'));
     const syncLabels = () => (box.querySelectorAll('input[type=range]') as NodeListOf<HTMLInputElement>).forEach(inp => {
       const r = rows.find(x => x.k === inp.dataset.f)!;
-      inp.value = String(forces[inp.dataset.f as string]);   // 旧版隐式数字转字符串，语义不变
+      inp.value = r.toSlider(forces[inp.dataset.f as string]).toFixed(3);   // 滑杆空间
       (box.querySelector(`.gf-val[data-v="${inp.dataset.f}"]`) as HTMLElement).textContent = r.fmt(forces[inp.dataset.f as string]);
     });
     (box.querySelectorAll('input[type=range]') as NodeListOf<HTMLInputElement>).forEach(inp => {
       inp.addEventListener('input', () => {
-        forces[inp.dataset.f as string] = +inp.value;
+        const r = rows.find(x => x.k === inp.dataset.f)!;
+        forces[inp.dataset.f as string] = r.fromSlider(+inp.value);   // 滑杆空间 → 力值空间
         (box.querySelector(`.gf-val[data-v="${inp.dataset.f}"]`) as HTMLElement).textContent =
-          rows.find(x => x.k === inp.dataset.f)!.fmt(+inp.value);
+          r.fmt(forces[inp.dataset.f as string]);
         applyForces();
         runLayout(160, 0.3);       // 局部收敛:不打散整体布局
       });
@@ -641,6 +669,7 @@ export function mountGraphEngine(): GraphEngineHandle {
   function stopFly(): void { if (flyRaf) { cancelAnimationFrame(flyRaf); flyRaf = null; } }
   function flyTo(tk: number, tx: number, ty: number, ms = 650): void {
     stopFly();
+    viewTouched = true;
     if (w.prefersReducedMotion && w.prefersReducedMotion()) {
       view.k = tk; view.x = tx; view.y = ty; requestDraw(); return;
     }
@@ -660,9 +689,14 @@ export function mountGraphEngine(): GraphEngineHandle {
   }
 
   /* ---------- 聚焦 ---------- */
+  let pendingFocus: string | null = null;
   function focusNode(name: string): void {
     const n = nodeById.get(name);
     if (!n) { w.toast('图谱中未找到：' + name); return; }
+    /* 挂载时序加固（v2）：keep-alive 下本函数可能在画布盒就绪前被调（深链
+       onShow 兜底 / 键盘直调），W=0 会把飞行目标算到 (0,0)——挂起等
+       onResize 盒就绪后补飞（原实现靠 centered 分支的事后覆盖碰巧兜底）。 */
+    if (W <= 0 || H <= 0) { pendingFocus = name; return; }
     // 只亮邻居（墨晕随飞行渐显）
     setHover(n);
     const tk = 1.6;
@@ -672,13 +706,14 @@ export function mountGraphEngine(): GraphEngineHandle {
 
   /* ---------- 键盘 API ---------- */
   w.GRAPH = {
-    panBy(dx: number, dy: number) { stopFly(); view.x += dx; view.y += dy; requestDraw(); },
+    panBy(dx: number, dy: number) { stopFly(); view.x += dx; view.y += dy; viewTouched = true; requestDraw(); },
     zoomBy(f: number) {
       stopFly();
       const k = Math.max(0.12, Math.min(6, view.k * f));
       view.x = W / 2 - (W / 2 - view.x) * (k / view.k);
       view.y = H / 2 - (H / 2 - view.y) * (k / view.k);
       view.k = k;
+      viewTouched = true;
       requestDraw();
     },
     reset() {
@@ -686,15 +721,27 @@ export function mountGraphEngine(): GraphEngineHandle {
       flyTo(0.55, W / 2, H / 2 - 10);
     },
     relayout() { runLayout(260); },
+    /* 只读几何快照（v2 新增）：布局验收「能算就不看」用——节点世界坐标 + 当前视图变换。
+       screen = world * view.k + (view.x, view.y)。不进 React、不影响布局。 */
+    stats() {
+      return {
+        view: { k: view.k, x: view.x, y: view.y }, w: W, h: H,
+        nodes: nodes.map(n => ({ id: n.id, x: n.x, y: n.y, deg: n.deg, type: n.type })),
+      };
+    },
   };
 
   let centered = false;
   function onResize(): void {
     W = (canvas.parentElement as HTMLElement).clientWidth;
     H = (canvas.parentElement as HTMLElement).clientHeight;
-    if (!centered && W > 0) {          // 初始把图群放到画布中央
+    if (!centered && W > 0 && !viewTouched) {   // 初始把图群放到画布中央（视图从未被推动时才插手）
       centered = true;
       view.x = W / 2; view.y = H / 2 - 10;
+    }
+    if (pendingFocus && W > 0 && H > 0) {       // 盒就绪后补飞挂起的聚焦
+      const p = pendingFocus; pendingFocus = null;
+      focusNode(p);
     }
     canvas.width = W * devicePixelRatio;
     canvas.height = H * devicePixelRatio;

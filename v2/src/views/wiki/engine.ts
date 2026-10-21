@@ -193,6 +193,8 @@ export interface ArticleModel {
   linksHtml: string
   /** 章节页 AI 总结导读正文 html（'' = 无） */
   sumHtml: string
+  /** render 期正文未就绪（blocks 是「加载中」占位）；组件层据此补触发重算 */
+  pending: boolean
 }
 
 /* badges() 原样：类型徽章 + 前 12 枚标签 */
@@ -267,6 +269,7 @@ export function buildEntryDoc(byName: Map<string, AnyObj>, name: string): Articl
       ? `<span class="wlb-label">关联入口</span>` + w.crossActionsForWiki(item)
       : '',
     sumHtml: '',
+    pending: !item.body,
   }
 }
 
@@ -307,6 +310,7 @@ export function buildChapterDoc(path: string, pzId: string): ArticleModel | null
     linksHtml:
       `<span class="wlb-label">关联入口</span>` +
       `<button data-act="obsidian" data-uri="${escAttr(obsidianUri(ch.path))}">✎ Obsidian 打开</button>`,
+    pending: !rec,
   }
 }
 

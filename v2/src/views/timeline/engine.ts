@@ -799,17 +799,53 @@ function buildFilters() {
   grip.className = 'fl-grip';
   grip.title = '拖拽调整大小 · 双击复位';
   box.appendChild(grip);
+  /* 把手在左下角：宽以固定右缘为参照（向左拖=加宽），高以固定顶缘为参照
+     （向下拖=加高）——旧实现高度误用 `r.bottom - ev.clientY`（顶边把手公式），
+     实为鼠标到旧底缘的镜像距离：上拖只会把高度写成"拖距+8.5px"（小拖距全被
+     下限钳平 →"拖了没反应"），下拖反向；纯横向拖还会把高度砸成 46px 下限。
+     改为增量语义：宽高各自自 mousedown 起步、边缘 1:1 跟手，双向自然。
+     收起态：纵向意图先自动展开（高度基准取记忆值，无则自然展开高）再续调；
+     横向拖只调宽、不强行展开。双击复位不动收起/展开状态。 */
   grip.addEventListener('mousedown', (e: MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
-    const r = box.getBoundingClientRect();
+    const x0 = e.clientX, y0 = e.clientY;
+    const collapsed0 = box.classList.contains('collapsed');
+    const r0 = box.getBoundingClientRect();
+    let active = !collapsed0;            // 展开态起步即调；收起态待方向判定
+    let growH = !collapsed0;             // 收起态横向意图只调宽
+    let baseH = r0.height, baseW = r0.width;
+    let didResize = false;               // 原地点击不落尺寸记忆
+    const activate = () => {             // 收起→展开：先回记忆高/自然高，再增量续调
+      box.classList.remove('collapsed');
+      let h = 0;
+      try {
+        const s = JSON.parse(localStorage.getItem(SIZE_KEY) || 'null');
+        if (s && s.h) h = Math.min(s.h, window.innerHeight - 90);
+      } catch (_) { /* 忽略 */ }
+      if (!h) { box.style.height = ''; h = box.getBoundingClientRect().height; }
+      baseH = h; box.style.height = h + 'px';
+      active = true; growH = true;
+    };
     const onMove = (ev: MouseEvent) => {
-      box.style.width = Math.max(170, Math.min(640, r.right - ev.clientX)) + 'px';
-      box.style.height = Math.max(46, Math.min(window.innerHeight - 90, r.bottom - ev.clientY)) + 'px';
+      const dx = ev.clientX - x0, dy = ev.clientY - y0;
+      if (!active) {
+        if (Math.hypot(dx, dy) < 3) return;            // 死区：防点击/双击微动误调
+        if (Math.abs(dy) >= Math.abs(dx)) activate();  // 纵向意图→自动展开续调
+        else active = true;                            // 横向意图→只调宽
+      }
+      box.style.width = Math.max(170, Math.min(640, baseW + (x0 - ev.clientX))) + 'px';
+      if (growH) box.style.height = Math.max(46, Math.min(window.innerHeight - 90, baseH + dy)) + 'px';
+      didResize = true;
     };
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      try { localStorage.setItem(SIZE_KEY, JSON.stringify({ w: box.offsetWidth, h: box.offsetHeight })); } catch (_) { /* 忽略 */ }
+      if (!didResize) return;
+      try {
+        // 收起态高度是内容自适应值、非用户所选，不落记忆（否则下次自动展开会被压回 41px）
+        const h = box.classList.contains('collapsed') ? 0 : box.offsetHeight;
+        localStorage.setItem(SIZE_KEY, JSON.stringify({ w: box.offsetWidth, h }));
+      } catch (_) { /* 忽略 */ }
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);

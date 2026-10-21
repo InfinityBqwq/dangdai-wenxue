@@ -118,9 +118,18 @@ export default function WikiView() {
     if (params && params.name) openEntryRef.current(String(params.name))
   }, [params])
 
-  /* ---- 正文/章节原文惰性补载（show/showChapter 补载段原样语义） ---- */
+  /* ---- 正文/章节原文惰性补载（show/showChapter 补载段原样语义） ----
+     「包就绪 → 重渲染」统一由 bodyTick 驱动，两条路都必须落 setState：
+     - 异步路：包未载，ensureBodyData resolve 后 bump（doc 的 deps 含 bodyTick）；
+     - 同步路：包已载但本轮 render 期 doc 仍是占位（doc.pending）——ensureEntryBody
+       的回填发生在 effect 期（commit 之后），或包恰在 render→effect 的 microtask
+       窗口才就绪，此处不 bump 就没有任何状态变化，页面停在「正文加载中」，只能
+       靠切页改变 sel 才恢复（即线上反馈的 bug）。
+     bump 后 doc 重算、pending 翻 false。deps 刻意不含 bodyTick/doc（闭包里的 doc
+     即本轮 commit 的模型）：不含 bodyTick 则 bump 不会自触；不含 doc 则「包里确实
+     无此条记录」的终态占位（pending 恒 true）不会因 doc 新对象反复重跑成死循环。 */
   useEffect(() => {
-    if (!sel) return
+    if (!sel || !doc?.pending) return
     const ready =
       sel.kind === 'entry'
         ? (() => {
@@ -128,7 +137,10 @@ export default function WikiView() {
             return item ? ensureEntryBody(item) : true
           })()
         : ensureChapterLoaded()
-    if (ready) return
+    if (ready) {
+      setBodyTick((t) => t + 1) // 数据已就绪而模型还是占位：补一次重算
+      return
+    }
     let alive = true
     ensureBodyData()
       .then(() => {
