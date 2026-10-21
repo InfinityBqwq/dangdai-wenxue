@@ -20,6 +20,7 @@ import { useEffect, useRef } from 'react'
 import { animate, stagger } from 'motion'
 import { useViewParams, useAppContext, prefersReducedMotion } from '@/shell/api'
 import { init as engineInit, onShow as engineOnShow, onSourceChange as engineOnSourceChange } from './engine'
+import { EASE_APPEAR } from '@/styles/motionTokens'
 import './timeline.css'
 
 export default function TimelineView() {
@@ -70,6 +71,6 @@ function staggerLegend() {
   animate(rows, { opacity: [0, 1], y: [7, 0] }, {
     duration: 0.28,
     delay: stagger(0.018),
-    ease: [0.16, 1, 0.3, 1],
+    ease: EASE_APPEAR,
   })
 }

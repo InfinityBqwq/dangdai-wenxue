@@ -122,5 +122,8 @@
   --dur-beat:  .15s;   /* 节拍：微交互 / AnimatePresence 旧视图淡出段 */
   --dur-step:  .28s;   /* 步进：stagger 单步基准 */
   --dur-scene: .8s;    /* 场景：容器级编排（对齐 --dur-slow） */
+  --dur-land:  .45s;   /* 软着陆：卡片落板弹簧 / 长卷图层显影（带形变的中长收敛） */
+  --dur-fade:  .3s;    /* 显隐淡染：图层过滤开关等纯 opacity 切换 */
+  --dur-pop:   .14s;   /* 浮层出场：与地图引擎 .closing 140ms 移除定时配套，勿单独改动 */
   --stagger-gap: 18ms; /* 条目错峰间隔（性能红线：stagger ≤24 条） */
 }

@@ -23,6 +23,7 @@ import {
   useTransform,
 } from 'motion/react'
 import type { ArticleModel } from './engine'
+import { EASE_APPEAR, T_INSTANT } from '@/styles/motionTokens'
 
 /** 标题逐字显影：与 Drawer 同拍（24 字封顶，性能红线） */
 const CHAR_CAP = 24
@@ -42,7 +43,7 @@ function RevealBlock({ html, i, reduced }: { html: string; i: number; reduced: b
       ref={ref}
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: inView ? 1 : 0, y: inView ? 0 : 14 }}
-      transition={{ delay: inView ? delay : 0, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      transition={{ delay: inView ? delay : 0, duration: 0.4, ease: EASE_APPEAR }}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   )
@@ -162,7 +163,7 @@ export const WikiArticle = forwardRef(function WikiArticle(
       animate={{ opacity: 1 }}
       exit={
         reduced
-          ? { opacity: 0, pointerEvents: 'none', transition: { duration: 0.01 } }
+          ? { opacity: 0, pointerEvents: 'none', transition: T_INSTANT }
           : { opacity: 0, pointerEvents: 'none', transition: { duration: 0.18, ease: 'easeOut' } }
       }
       transition={{ duration: 0.2 }}
@@ -177,7 +178,7 @@ export const WikiArticle = forwardRef(function WikiArticle(
               className="wiki-char"
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: Math.min(i, CHAR_CAP) * CHAR_GAP, duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+              transition={{ delay: Math.min(i, CHAR_CAP) * CHAR_GAP, duration: 0.3, ease: EASE_APPEAR }}
             >
               {ch}
             </motion.span>

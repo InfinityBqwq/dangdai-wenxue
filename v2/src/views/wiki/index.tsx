@@ -16,6 +16,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { switchView, ensureBodyData } from '@/shell/api'
 import { useAppContext, useViewParams } from '@/shell/api'
+import { T_INSTANT } from '@/styles/motionTokens'
 import {
   buildByName,
   buildChapterDoc,
@@ -187,7 +188,7 @@ export default function WikiView() {
                   animate={{ opacity: 1 }}
                   exit={
                     reduced
-                      ? { opacity: 0, transition: { duration: 0.01 } }
+                      ? { opacity: 0, transition: T_INSTANT }
                       : { opacity: 0, pointerEvents: 'none', transition: { duration: 0.18, ease: 'easeOut' } }
                   }
                   transition={{ duration: 0.2 }}

@@ -12,6 +12,7 @@ import { useStore } from './uiStore'
 import { buildEntityModel, buildEventModel, buildNoteModel } from './drawerContent'
 import type { DrawerModel } from './drawerContent'
 import { closeDrawer, openPalette, switchView } from './api'
+import { EASE_APPEAR } from '@/styles/motionTokens'
 
 const SLIDE_SPRING = { type: 'spring', stiffness: 320, damping: 30 } as const
 const EXIT_SPRING = { type: 'spring', stiffness: 420, damping: 38 } as const
@@ -41,7 +42,7 @@ function DrawerActions({
           data-act={a.act}
           {...Object.fromEntries(Object.entries(a.attrs).map(([k, v]) => [`data-${k}`, v]))}
           variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }}
-          transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: 0.28, ease: EASE_APPEAR }}
         >
           {a.label}
         </motion.button>
@@ -145,7 +146,7 @@ export default function Drawer() {
                     transition={{
                       delay: Math.min(i, CHAR_CAP) * CHAR_GAP,
                       duration: 0.3,
-                      ease: [0.16, 1, 0.3, 1],
+                      ease: EASE_APPEAR,
                     }}
                   >
                     {ch}

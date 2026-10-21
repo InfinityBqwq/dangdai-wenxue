@@ -71,10 +71,10 @@
 #tl-filters .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 
 /* 时间轴淡入淡出（入场显影 + 图层过滤 + 聚焦环） */
-.g-minors, .g-washes, .g-ticks { transition: opacity .45s var(--ease-brush); }
-.minor, .major, .band, .seal { transition: opacity .3s var(--ease-brush); }
+.g-minors, .g-washes, .g-ticks { transition: opacity var(--dur-land) var(--ease-brush); }
+.minor, .major, .band, .seal { transition: opacity var(--dur-fade) var(--ease-brush); }
 .minor.off, .major.off, .band.off, .seal.off { opacity: 0 !important; pointer-events: none; }
-.focus-ring { opacity: 0; pointer-events: none; transition: opacity .22s var(--ease-brush); }
+.focus-ring { opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-brush); }
 .focus-ring.show { opacity: 1; }
 
 /* ============================================================
@@ -103,6 +103,8 @@
    · circle（次要事件聚焦点）：轻微缩放脉冲。
    只动 transform/opacity；reduced-motion 下直跳静态终态。
    ============================================================ */
+/* 周期值（12s 旋回 / 2.2s 脉搏）是氛围动画的循环周期，非交互时长节拍，
+   不纳入 --dur-* 令牌体系；linear 为匀速旋转的正确缓动。 */
 .focus-ring.show rect {
   transform-box: fill-box;
   transform-origin: 50% 50%;

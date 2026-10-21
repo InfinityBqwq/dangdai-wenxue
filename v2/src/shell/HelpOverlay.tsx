@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { helpStore } from './uiStore'
 import { useStore } from './uiStore'
 import { toggleHelp } from './api'
+import { EASE_APPEAR } from '@/styles/motionTokens'
 
 const CARD_SPRING = { type: 'spring', stiffness: 380, damping: 30 } as const
 
@@ -85,7 +86,7 @@ export default function HelpOverlay() {
                   key={g}
                   className="kh-group"
                   variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } }}
-                  transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                  transition={{ duration: 0.3, ease: EASE_APPEAR }}
                 >
                   <div className="kh-gtitle">{g}</div>
                   {rows.map(([k, d]) => (

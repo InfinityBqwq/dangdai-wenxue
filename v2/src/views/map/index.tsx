@@ -21,10 +21,9 @@ import { useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { useAppContext, useViewParams } from '@/shell/api'
 import { initMap, onShow } from './engine'
+import { EASE_APPEAR } from '@/styles/motionTokens'
 import './map.css'
 
-/* --ease-appear（tokens.css 第 9 节）的 motion 侧等价贝塞尔 */
-const EASE_APPEAR: [number, number, number, number] = [0.16, 1, 0.3, 1]
 const SPRING = { type: 'spring', stiffness: 520, damping: 30 } as const
 
 export default function MapView() {

@@ -42,7 +42,7 @@
   border: 1px solid var(--paper-edge); background: transparent;
   color: var(--ink-3); font-size: 11.5px;
   padding: 2.5px 9px; border-radius: 12px;
-  transition: all var(--dur-fast);
+  transition: color var(--dur-fast), background var(--dur-fast), border-color var(--dur-fast);
 }
 .pz-chip i { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
 .pz-chip:hover { color: var(--ink-1); border-color: var(--ink-3); }
@@ -236,7 +236,7 @@
   border: none; background: transparent; color: var(--ink-2);
   font-size: 12px; font-family: var(--font-brush); letter-spacing: 1px;
   padding: 4px 8px; border-radius: 3px; white-space: nowrap;
-  transition: all var(--dur-fast);
+  transition: color var(--dur-fast), background var(--dur-fast);
 }
 #pz-toolbar button:hover { background: var(--paper-2); color: var(--ink-0); }
 #pz-toolbar .pz-zoom {
@@ -262,7 +262,7 @@
   flex: 1; border: none; background: transparent; color: var(--ink-2);
   font-size: 11.5px; padding: 4px 0;
   display: flex; align-items: center; justify-content: center; gap: 4px;
-  transition: all var(--dur-fast);
+  transition: color var(--dur-fast), background var(--dur-fast);
 }
 .pz-sb-seg button + button { border-left: 1px solid var(--paper-edge); }
 .pz-sb-seg button:hover { background: var(--paper-2); color: var(--ink-0); }
@@ -279,7 +279,7 @@
 .pz-sb-del {
   border: 1px solid var(--paper-edge); background: transparent; color: var(--ink-3);
   font-size: 11.5px; padding: 4px 9px; border-radius: 4px; white-space: nowrap;
-  transition: all var(--dur-fast);
+  transition: color var(--dur-fast), border-color var(--dur-fast);
 }
 .pz-sb-del:hover { border-color: var(--cinnabar); color: var(--cinnabar); }
 #pz-empty {
@@ -356,7 +356,7 @@
 
 /* 1) 新卡片上板落地弹簧：scale 过冲 + 阴影收敛（addCard 挂 .pz-land） */
 .pz-card.pz-land {
-  animation: pz-card-land .45s var(--ease-out-soft) both;
+  animation: pz-card-land var(--dur-land) var(--ease-out-soft) both;
   transform-origin: 50% 100%;
 }
 @keyframes pz-card-land {

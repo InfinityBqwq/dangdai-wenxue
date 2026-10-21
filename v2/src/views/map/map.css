@@ -29,13 +29,13 @@
   box-shadow: 0 8px 26px var(--paper-shadow);
   z-index: 20;
   padding: 10px 8px 8px;
-  animation: popIn .16s var(--ease-brush);
+  animation: popIn var(--dur-fast) var(--ease-brush);
 }
 @keyframes popIn { from { opacity: 0; transform: translateY(4px); } }
-/* 名录浮层出场淡出（map.js 加 .closing 140ms 后移除） */
+/* 名录浮层出场淡出（map.js 加 .closing 140ms 后移除；时长用 --dur-pop 与之配套） */
 .map-pop.closing {
   opacity: 0; transform: translateY(4px);
-  transition: opacity .14s var(--ease-brush), transform .14s var(--ease-brush);
+  transition: opacity var(--dur-pop) var(--ease-brush), transform var(--dur-pop) var(--ease-brush);
 }
 .map-pop .mp-head {
   font-family: var(--font-brush);
@@ -119,7 +119,7 @@
 .odo-col { width: 0.6em; height: 1em; overflow: hidden; }
 .odo-strip {
   display: flex; flex-direction: column;
-  transition: transform .28s var(--ease-spring);
+  transition: transform var(--dur-step) var(--ease-spring);
   will-change: transform;
 }
 .odo-digit { height: 1em; line-height: 1; text-align: center; }

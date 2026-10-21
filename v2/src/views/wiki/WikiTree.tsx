@@ -9,6 +9,7 @@
 import type { ReactNode } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { Transition } from 'motion/react'
+import { EASE_APPEAR, T_INSTANT } from '@/styles/motionTokens'
 import type { TreeModel, TreeScheme, TreeChapter } from './engine'
 import type { Sel } from './engine'
 
@@ -62,7 +63,7 @@ function Collapsible({
             initial={reduced ? false : { height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
-            transition={reduced ? { duration: 0.01 } : ({ height: HEIGHT_SPRING, opacity: FADE } as Transition)}
+            transition={reduced ? T_INSTANT : ({ height: HEIGHT_SPRING, opacity: FADE } as Transition)}
           >
             <div className="wt-inner">{children}</div>
           </motion.div>
@@ -82,7 +83,7 @@ function TreeItemBtn({
       onClick={() => onOpen(name)}
       initial={reduced ? false : { opacity: 0, x: -8 }}
       animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: staggerDelay(i), duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+      transition={{ delay: staggerDelay(i), duration: 0.25, ease: EASE_APPEAR }}
     >
       {name}
     </motion.button>
@@ -119,7 +120,7 @@ function PeriodBlock({
             initial={reduced ? false : { height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
-            transition={reduced ? { duration: 0.01 } : ({ height: HEIGHT_SPRING, opacity: FADE } as Transition)}
+            transition={reduced ? T_INSTANT : ({ height: HEIGHT_SPRING, opacity: FADE } as Transition)}
           >
             <div className="wt-inner">
               {period.chapters.map((c, i) => (
@@ -130,7 +131,7 @@ function PeriodBlock({
                     onClick={() => onOpenChapter(c, pzId)}
                     initial={reduced ? false : { opacity: 0, x: -8 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: staggerDelay(i), duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                    transition={{ delay: staggerDelay(i), duration: 0.25, ease: EASE_APPEAR }}
                   >
                     {c.title}
                   </motion.button>
@@ -141,7 +142,7 @@ function PeriodBlock({
                       onClick={() => onOpenChapter(c, pzId)}
                       initial={reduced ? false : { opacity: 0, x: -8 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: staggerDelay(i) + 0.02, duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                      transition={{ delay: staggerDelay(i) + 0.02, duration: 0.25, ease: EASE_APPEAR }}
                     >
                       AI 总结
                     </motion.button>

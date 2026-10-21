@@ -14,6 +14,7 @@ import type { SearchItem } from './search'
 import { closePalette, openDrawerEntity, openDrawerEvent, openWikiPage, switchView } from './api'
 import { esc } from './util'
 import { eventById } from './indexes'
+import { EASE_APPEAR } from '@/styles/motionTokens'
 
 const PANEL_SPRING = { type: 'spring', stiffness: 420, damping: 32 } as const
 const CURSOR_SPRING = { type: 'spring', stiffness: 520, damping: 42 } as const
@@ -152,7 +153,7 @@ export default function CommandPalette() {
                       key={it.kind + ':' + it.name}
                       className={'pal-item' + (i === active ? ' current' : '')}
                       variants={{ hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0 } }}
-                      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                      transition={{ duration: 0.22, ease: EASE_APPEAR }}
                       onMouseEnter={() => setActive(i)}
                       onClick={() => activate(it)}
                     >
