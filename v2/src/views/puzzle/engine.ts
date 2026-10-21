@@ -29,10 +29,10 @@
  *       puzzle.css 按 --stagger-gap 级联 delay，260ms 封顶）。
  *  ③ noUnusedLocals 规避：旧版遗留只写引用 root 保留赋值原样，补一行 void root。
  *
- * 旧版已知怪癖（本移植按"一字不动"原样保留，未修复，仅在此备案）：
+ * 旧版已知怪癖（备案与处置）：
  *  - js/puzzle.js:484+517：activeLinkDrag 先置 true 再赋 .cancel，严格模式下
- *    该赋值抛 TypeError（旧版同为 'use strict'，行为一致）——连线拖拽本身可用
- *    （监听先于抛错挂上），仅 Esc 中断连线拖拽（cancelDrag）失效；
+ *    该赋值抛 TypeError——v2 验收（2026-10-21）判定为违反零报错门禁，已修复
+ *    （activeLinkDrag 改持对象，见 startLinkDrag 内注），Esc 中断连线拖拽随之恢复可用；
  *  - js/puzzle.js:584：positionStylebar 的 sy 误用 v.y（应为 v.k），
  *    连线样式条纵向定位失准——原样保留。
  */
@@ -140,7 +140,7 @@ export function mountPuzzleEngine(): PuzzleEngineHandle {
     seq: 1,
   }
   let sel: { type: 'card' | 'link' | 'group'; uid: string } | null = null // {type:'card'|'link'|'group', uid}
-  let activeLinkDrag: any = null // 连线拖拽进行中(Esc 可取消)
+  let activeLinkDrag: { cancel?: () => boolean } | null = null // 连线拖拽进行中(Esc 可取消)
   let pendingCenter = false      // v2 keep-alive 适配：init 时容器不可见，首次居中待 onShow 补做
 
   /* DOM 引用 */
@@ -619,7 +619,11 @@ export function mountPuzzleEngine(): PuzzleEngineHandle {
     temp.setAttribute('vector-effect', 'non-scaling-stroke')
     edgeSvg.appendChild(temp)
     let targetUid: string | null = null, targetEl: Element | null = null, dead = false
-    activeLinkDrag = true
+    // v2 验收修复（2026-10-21）：旧版此处为 activeLinkDrag = true（原始类型），
+    // 随后 activeLinkDrag.cancel = … 在严格模式下每次拖线必抛 TypeError
+    //（uncaught pageerror，违反零报错门禁，原文件头已备案）。改为空对象承载
+    // cancel，语义等价（"进行中"标志 + Esc 可中断），交互行为不变。
+    activeLinkDrag = {}
     el.setPointerCapture(e.pointerId)
     const cleanup = () => {
       dead = true
@@ -652,8 +656,8 @@ export function mountPuzzleEngine(): PuzzleEngineHandle {
     el.addEventListener('pointermove', mv)
     el.addEventListener('pointerup', up, { once: true })
     el.addEventListener('pointercancel', up, { once: true })
-    // 旧版原样：activeLinkDrag 此刻为 true（原始类型），严格模式下本赋值抛 TypeError
-    //（旧版 'use strict' 行为一致——连线拖拽可用，仅 Esc 中断失效）；逐字保留，见文件头备案
+    // activeLinkDrag 现为对象（见 startLinkDrag 开头验收修复注），此处赋值不再抛 TypeError；
+    // Esc 经 PUZZLE.cancelDrag → activeLinkDrag.cancel() 中断连线拖拽（旧版此路恒失效）。
     activeLinkDrag.cancel = () => {
       if (dead) return false
       cleanup()

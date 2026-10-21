@@ -21,6 +21,7 @@ import {
   stripTitleHeading,
 } from './api'
 import { compareBlockHtml, crossActionsForWiki } from './drawerContent'
+import { rebuildSearchIndex } from './search'
 
 export function installGlobals(): void {
   const w = window as any
@@ -61,4 +62,10 @@ export function installGlobals(): void {
 
   /* 视图模块注册表（引擎岛初始化时可注册 init/onShow/onSourceChange，路由照旧通知） */
   w.Views = w.Views || {}
+
+  /* 搜索索引冷启动就绪：data.js 经 main.tsx 静态副作用引入，此处 window.DATA 必已
+     就绪（rebuildSearchIndex 自带 !D 守卫）。此前索引唯一重建点是 setSource（切编年
+     口径），冷启动 Ctrl+K 恒为空结果——search.ts 头注释承诺的"installGlobals 会再
+     补一次"在此兑现（浏览器验收发现的缺陷，2026-10-21）。 */
+  rebuildSearchIndex()
 }
