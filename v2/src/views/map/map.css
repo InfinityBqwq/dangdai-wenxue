@@ -133,10 +133,12 @@
 }
 .play-glyph {
   position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
+  display: grid; place-items: center;
 }
+/* ▶/⏸ 叠放同一网格单元：隐藏态（scale+opacity）不占布局，可见图标恒居中 */
+.pg-tri, .pg-bars { grid-area: 1 / 1; }
 .pg-tri {
-  width: 11px; height: 13px;
+  width: 11px; height: 13px; margin-left: 1px; /* 光学补偿：直角三角形质心偏左，右移 1px 视觉居中 */
   background: var(--cinnabar);
   clip-path: polygon(0 0, 100% 50%, 0 100%);
 }
